@@ -1,0 +1,29 @@
+{
+  "profile": "raspberry-pi4b-example-only-unverified",
+  "dry_run": true,
+  "click_policy": {
+    "min_interval_seconds": 0.25,
+    "first_click_delay_seconds": 0.0,
+    "first_click_delay_status": "provisional",
+    "submission_policy": "not_decided"
+  },
+  "screen": {
+    "calibrated": false,
+    "coordinate_system": "primary-monitor-physical-pixels"
+  },
+  "grid": {
+    "left": 100,
+    "top": 100,
+    "width": 600,
+    "height": 600,
+    "rows": 3,
+    "columns": 3,
+    "gap_x": 0,
+    "gap_y": 0
+  },
+  "model": {
+    "path": null,
+    "metadata_path": null,
+    "provider": "CPUExecutionProvider"
+  }
+}

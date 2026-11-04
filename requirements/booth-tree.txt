@@ -1,0 +1,4 @@
+# Optional open-vocabulary tree-count candidate for the booth. PC tested separately.
+# Do not replace the existing CUDA torch/torchvision environment.
+transformers==4.57.3
+safetensors==0.7.0

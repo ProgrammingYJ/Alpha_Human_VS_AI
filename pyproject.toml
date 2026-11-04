@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha-captcha-ai"
+version = "0.1.0"
+description = "Songnae High School ALPHA image ML and tile-control scaffold"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[project.scripts]
+alpha-captcha = "alpha_captcha.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

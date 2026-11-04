@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "name": "per-condition-four-positive-target-v2",
+  "status": "target_confirmed_not_achieved",
+  "target_success_rate": 0.4,
+  "target_scope": "each_condition_separately",
+  "metric": "exact_selected_tile_set_match",
+  "grid": {
+    "rows": 3,
+    "columns": 3,
+    "positive_tiles_for_evaluator_only": 4,
+    "negative_tiles_for_evaluator_only": 5,
+    "distinct_source_groups_per_grid": 9
+  },
+  "conditions": [
+    {
+      "task_type": "tree_present"
+    },
+    {
+      "task_type": "building_present"
+    },
+    {
+      "task_type": "pond_present"
+    },
+    {
+      "task_type": "person_present"
+    },
+    {
+      "task_type": "person_count",
+      "operator": "gte",
+      "n": 2
+    },
+    {
+      "task_type": "person_count",
+      "operator": "gte",
+      "n": 3
+    },
+    {
+      "task_type": "person_count",
+      "operator": "gte",
+      "n": 4
+    },
+    {
+      "task_type": "person_count",
+      "operator": "gte",
+      "n": 5
+    }
+  ],
+  "engineering_near_target_band": null,
+  "target_tolerance_note": "User requested approximately 40%; a numerical pass band is not yet fixed. Report measured distance to 0.40, never claim an exact guarantee.",
+  "selection": {
+    "split": "val",
+    "seed": 20261022,
+    "candidate_budget_policy": "freeze finite candidate list before fitting; new v2 candidates only",
+    "do_not_use_v1_test": true,
+    "default_training_cli_evaluates_test": false
+  },
+  "audit": {
+    "split": "test",
+    "new_source_groups_required": true,
+    "once_after_model_freeze": true,
+    "reused_grids_are_independent_samples": false
+  },
+  "school_data": {
+    "use": "final_evaluation_after_model_freeze_only",
+    "allowed_for_selection": false
+  },
+  "prohibited": [
+    "prediction_flips",
+    "correct_click_omission",
+    "answer_file_lookup",
+    "forced_top4",
+    "school_tuning",
+    "v1_test_tuning"
+  ],
+  "notes": [
+    "Four positives describes the evaluation bank, never a predictor input.",
+    "n=2..5 conditions are checked separately.",
+    "40% is a desired model success rate, not a human win rate.",
+    "No calibrated v2 checkpoint exists yet."
+  ]
+}

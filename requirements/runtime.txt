@@ -1,0 +1,7 @@
+# Shared runtime dependencies; resolved on Windows, Pi remains untested.
+numpy==2.5.2
+Pillow==12.3.0
+onnxruntime==1.31.0
+mss==10.2.0
+PyAutoGUI==0.9.54
+PyYAML==6.0.3

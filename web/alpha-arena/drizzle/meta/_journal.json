@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792948587326,
+      "tag": "0000_living_ma_gnuci",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793056934742,
+      "tag": "0001_past_rocket_racer",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793076280775,
+      "tag": "0002_mysterious_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793090241621,
+      "tag": "0003_colorful_cassandra_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793162194585,
+      "tag": "0004_amazing_namora",
+      "breakpoints": true
+    }
+  ]
+}

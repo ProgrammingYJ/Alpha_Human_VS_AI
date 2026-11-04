@@ -1,0 +1,9 @@
+// Shared with SQLite regression tests. D1 executes each batch transactionally.
+export const START_ROUND_INSERT = "INSERT INTO arena_rounds (id, room_id, number, theme_id, tiles_json, answer_json, start_at, deadline_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM arena_rooms WHERE id = ? AND revision = ? AND round_number = 0 AND bot_ready = 1 AND bot_token_hash IS NOT NULL AND phase = 'lobby')";
+export const START_ROOM_UPDATE = "UPDATE arena_rooms SET round_id = ?, round_number = round_number + 1, phase = 'active', human_ready = 1, revision = revision + 1 WHERE id = ? AND revision = ? AND round_number = 0 AND bot_ready = 1 AND bot_token_hash IS NOT NULL AND phase = 'lobby' AND EXISTS (SELECT 1 FROM arena_rounds WHERE id = ?)";
+export const FINISH_IF_CORRECT = "UPDATE arena_rooms SET phase = 'result', revision = revision + 1 WHERE id = ? AND round_id = ? AND phase = 'active' AND EXISTS (SELECT 1 FROM arena_rounds WHERE id = ? AND (human_correct = 1 OR bot_correct = 1))";
+export const PHOTO_FOR_CURRENT_ROUND = "SELECT p.*, CASE WHEN r.image_load_id IS NOT NULL THEN 0 ELSE r.start_at END AS visible_at FROM arena_rounds AS r JOIN arena_rooms AS room ON room.id = r.room_id AND room.round_id = r.id JOIN json_each(r.tiles_json) AS t JOIN arena_photos AS p ON p.id = json_extract(t.value, '$.photoId') WHERE json_extract(t.value, '$.id') = ? AND (r.start_at <= ? OR (r.image_load_id IS NOT NULL AND room.phase IN ('loading','active'))) AND room.expires_at > ? LIMIT 1";
+export function submitStatement(role) {
+  if (role !== "human" && role !== "bot") throw new Error("Invalid participant role");
+  return `UPDATE arena_rounds SET ${role}_submitted_at = ?, ${role}_correct = ?, ${role}_elapsed_ms = ? WHERE id = ? AND ${role}_submitted_at IS NULL AND COALESCE(human_correct, 0) <> 1 AND COALESCE(bot_correct, 0) <> 1 AND start_at <= ? AND deadline_at > ? AND EXISTS (SELECT 1 FROM arena_rooms WHERE id = ? AND round_id = ? AND phase = 'active')`;
+}

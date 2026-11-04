@@ -1,0 +1,10 @@
+{
+  "url": "https://bot.marulee.dev/",
+  "expected_window_title": "ALPHA BOT | CAPTCHA",
+  "calibrated": false,
+  "grid": {"left": 0, "top": 0, "width": 600, "height": 600, "rows": 3, "columns": 3, "gap_x": 8, "gap_y": 8},
+  "submit": {"x": 0, "y": 0},
+  "question_guard": {"left": 0, "top": 0, "width": 470, "height": 82},
+  "min_interval_seconds": 0.25,
+  "first_click_delay_seconds": 0.0
+}

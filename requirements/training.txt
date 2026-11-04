@@ -1,0 +1,7 @@
+# PC training and export tools. Install pc-gpu.txt separately.
+-r runtime.txt
+onnx==1.23.2
+onnxscript==0.7.2
+scikit-learn==1.9.1
+tqdm==4.70.1
+kaggle==2.2.4

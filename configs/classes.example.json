@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "status": "limited_baseline_v1_output_order_recorded",
+  "presence_targets": ["tree", "building", "pond"],
+  "person_instance_target": "person",
+  "count_question_n_range": [2, 5],
+  "classes": ["tree", "building", "pond"],
+  "presence_output_type": "independent_sigmoid",
+  "person_pretrained_category_id": 1,
+  "annotation_rules": "docs/DATASET.md",
+  "note": "Descriptive example. Checkpoint metadata is authoritative. The three presence classes may coexist. Person count is derived from reviewed real-person instances, not a mutually-exclusive presence class. Ambiguous labels remain unknown; school data is reserved for final evaluation."
+}

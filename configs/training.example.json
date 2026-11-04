@@ -1,0 +1,22 @@
+{
+  "schema_version": 3,
+  "status": "limited_baseline_v1_trained_and_evaluated",
+  "presence_targets": ["tree", "building", "pond"],
+  "presence_architecture": "mobilenet_v3_small_multilabel",
+  "person_task": "instance_detection_and_counting",
+  "person_architecture": "ssdlite320_mobilenet_v3_large",
+  "seed": 42,
+  "count_question_n_range": [2, 5],
+  "weak_profile": {
+    "frozen": true,
+    "profile_path": "configs/limited-baseline-v1.json",
+    "epochs": 1,
+    "presence_max_train_images": 64,
+    "person_max_training_images": 32,
+    "presence_trainable_layers": "classifier_only_features_and_bn_frozen",
+    "person_trainable_layers": "detection_heads_only_backbone_and_bn_frozen",
+    "target_accuracy": null
+  },
+  "manifest_paths": ["data/manifests/coco-person-reviewed-split.jsonl", "data/manifests/presence-ml-v1.jsonl"],
+  "note": "Descriptive example, not a training CLI input. The immutable v1 profile and reports are authoritative. Unknown labels and ineligible/crowd counts are excluded. No school data. Test has been evaluated; preserve v1 and use a separate version and evaluation plan for future changes."
+}

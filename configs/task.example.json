@@ -1,0 +1,5 @@
+{
+  "task_type": "person_count",
+  "operator": "gte",
+  "n": 2
+}
