@@ -2,9 +2,9 @@
 
 최종 검토: 2026-11-04 (Asia/Pyongyang)
 
-## 최신 작업: GitHub 공개 저장소 준비 (2026-11-04)
+## 최신 작업: GitHub public 저장소 생성·소스 푸시 (2026-11-04)
 
-사용자 요청으로 [https://github.com/ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)를 `ProgrammingYJ` 계정에 public으로 생성했다. 이 시점 소스 내보내기·초기 푸시·원격 검증은 진행 중이며 완료로 보고하지 않는다. 기존 Sites v13 게시·운영34사진·가중치·임계값·원격 엔진은 이번 작업에서 변경하지 않는다.
+사용자 요청으로 [ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)를 `ProgrammingYJ` 계정에 **PUBLIC으로 생성하고 main에 초기 소스333파일을 푸시했다.** 첫 소스 커밋 `1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d`가 로컬 HEAD·git ls-remote·GitHub API에서 일치했다. GitHub 기본 브랜치 main·isEmpty=false·visibility=PUBLIC·tree truncated=false 및 333개 일반 파일(mode100644)/gitlink0을 확인했다. 이후 문서 결과 갱신도 같은 main에 동기화한다. 기존 Sites v13 게시·운영34사진·가중치·임계값·원격 엔진은 이번 작업에서 변경하지 않았다.
 
 원래 프로젝트는 루트 Git 저장소가 없고 web/alpha-arena에 Sites용 Git만 있다. 원본/기존 이력을 보존하고 별도 `C:\Users\Administrator\Desktop\Alpha_Human_VS_AI`에 새 Git 저장소를 만들어 Python과 웹을 일반 파일로 함께 올린다. 과거 Sites Git 이력이나 gitlink는 공개하지 않는다.
 
@@ -12,9 +12,29 @@
 - 제외: 실제 사진·Kaggle/학교 자료·학습/운영 manifest/정답은행·모델/가중치·JSON 실행 결과·로그·.env/자격정보·가상환경·node_modules·빌드/런타임 상태·이전 Git 이력. 사진별 정답표를 담은 runs/photo-clarity-20261102/build_review_v1.py 및 finalize_bank.py도 제외한다.
 - 공개본의 제외된 로컬 산출물 Markdown 링크는 `scripts/export_public_source.py`로 일반 경로로 표시한다. 원본 로컬 문서·코드 바이트는 유지한다. 새 clone에 실제 모델/은행/실측 파일이 설치돼 있다는 의미가 아니다.
 
-내보내기/민감 패턴·파일 일치·문서/테스트·원격 브랜치 검사 결과는 아래에 실제 수행 후 확정한다. 원본 폴더의 파일을 삭제하거나 Sites를 다시 배포하지 않는다.
+### 실제 공개 준비 검사
 
-이번 작업 검토: 관리13개를 분담해 전체 본문 재독·11/04 갱신 중이며 GitHub public 생성과 소스 내보내기 범위를 확인했다. 초기 푸시·검사 결과는 아직 진행 중이다.
+| 검사 | 관측 결과 |
+|---|---|
+| 최초 공개 복사본 |333파일·3,000,355bytes. 원본/복사본 SHA 일치, 비Markdown 코드 바이트 변경0, 공개 문서의 제외된 산출물 링크114개만 일반 경로로 표시 |
+| 독립 비밀/자료 감사 |실제 키/토큰/개인키 패턴0, 실제 사진/은행/운영JSON/모델/과거Git/심볼릭링크 제외 확인. 테스트용 자격 포함 URL2개는 고정 거부 fixture로 분류 |
+| 작성 도구 감사 |기존 runs 코드51개 중 정답표 내장2개 제외·나머지49개 공개 가능 확인. 이후 내보내기/문서 도구도 비밀 검사. 과거 고정PID PowerShell은 보관용이며 현재 운영 실행기로 안내하지 않음 |
+| 공개본 Python |원래 PC의 설치된 .venv와 공개본 src를 사용해179개 통과12.565초. 새 PC 의존성 재설치/실제 ML 모델·사진 운영 검증은 아님 |
+| 공개본 Node |HTTP 통합검사를 제외한 단위110개 통과. 새 npm 의존성 재설치·브라우저 QA·재배포는 수행하지 않음 |
+| 문서 |원본/공개본 각각 관리13개 날짜/색인·UTF-8/로컬 링크/목록/설정JSON8개 감사 통과. 외부 vendor 라이선스 보존 |
+| Git |export inventory333개와 staging333개 완전 일치·누락/초과0·gitlink0. Windows CRLF와 기존3파일 EOF 빈줄을 보존하고 나머지 whitespace 검사 통과 |
+
+최초 독립 감사는 로컬 `runs/github-public-20261104/independent-source-audit.json`, `independent-run-source-audit.json`, `independent-export-audit.json`에 보존했다. 실제 모델/사진을 올려 링크를 복구하지 않았으며 원본 파일 삭제·Sites 재배포·운영 프로세스 조작은 없다. 공개 Git 복사본은 원래 작업 폴더와 분리되어 이후 수정 시 원본에서 내보내기/refresh 후 같은 main으로 갱신한다. refresh는 이전 export SHA와 같은 소유 파일만 덮어써 공개 복사본의 수동 수정을 보호한다.
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 scripts/export_public_source.py --report runs/github-public-20261104/preflight-new.json
+.\.venv\Scripts\python.exe -X utf8 scripts/check_docs.py --date 2026-11-04
+.\.venv\Scripts\python.exe -X utf8 runs/site-publish/audit_docs.py --date 2026-11-04 --output runs/github-public-20261104/document-audit-new.json
+gh repo view ProgrammingYJ/Alpha_Human_VS_AI --json url,visibility,defaultBranchRef
+git -C C:/Users/Administrator/Desktop/Alpha_Human_VS_AI ls-remote origin refs/heads/main
+```
+
+이번 작업 검토: 관리13개를 분담해 전체 본문 재독·11/04 갱신하고 실제 public 생성·초기 푸시·원격 일치·일반 웹 파일/제외 범위·독립 감사 및 공개본 Python179/Node110·원본/공개본 문서13개 통과를 확인했다. 모델/사진/학교/40%/Pi/OS 입력·Sites 배포/운영 프로세스 경계는 유지한다. 최종 문서 동기화의 원격 HEAD 확인 결과는 로컬 release 기록으로 보존한다.
 
 ## 이전 작업: 애매한 사진 퇴역·명확한 사진 교체·버전13 (2026-11-02)
 

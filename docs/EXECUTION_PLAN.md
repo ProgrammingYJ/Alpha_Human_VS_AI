@@ -13,9 +13,9 @@
 
 이번 공개 준비는 현재 사이트 배포·A/B 서버 방·GPU 예약·선택 계획·모델 정확도 변경과 별개다. 운영34장·학교 미사용·고정 모델/임계값·최소250ms 선택·40%/ONNX/Pi/legacy 미완료를 유지한다. 아래 로컬 산출물 링크는 원본 문서에 보존하고 공개 내보내기에서는 제외 대상만 로컬 경로 설명으로 바꾼다. 실제 GitHub 주소·푸시/검증 결과의 정본은 [STATUS](STATUS.md)다.
 
-[ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) 공개 저장소 생성은 완료했다. 기존 프로젝트/Sites 연결을 보존하며 별도 `C:/Users/Administrator/Desktop/Alpha_Human_VS_AI` 새 Git 체크아웃으로 소스를 내보낸다. 웹 소스는 일반 파일로 포함하고 외부 Git 메타데이터/이력은 가져오지 않는다. 소스 푸시·원격 파일/커밋·공개본 문서 링크 검증은 대기 중이다.
+[ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) PUBLIC 저장소 생성과 `main` 소스 푸시를 완료했다. 기존 프로젝트/Sites 연결을 보존하며 별도 `C:/Users/Administrator/Desktop/Alpha_Human_VS_AI` 새 Git 체크아웃으로 소스를 내보냈다. 웹 소스는 일반 파일로 포함하고 외부 Git 메타데이터/이력은 가져오지 않았다. 첫 소스 커밋의 GitHub `main`/`git ls-remote` 일치와 원격333개 일반 파일·gitlink0·코드 바이트 일치/비밀값·원시 정답 자료 제외를 확인했다. 공개 복사본 Python179개·Node 단위110개·문서13개/UTF-8/링크/설정JSON8개도 통과했다. 후속 문서 커밋을 포함한 최신 원격 SHA는 [STATUS](STATUS.md) 또는 현재 `main`에서 확인한다.
 
-이번 작업 검토: 2026-11-04 실행 계획 전체 본문과 과거 검증/완료 이력을 재독하고 사용자 승인인 공개 저장소 생성·소스 검사·푸시와 데이터/비밀 제외 순서를 추가했다. 신규 사진/학습·추론/임계값 변경·배포·운영 프로세스 조작은 수행하지 않았다. 저장소에 소스가 있다는 사실을 기존 학습/현장 검증의 재현 성공으로 보고하지 않으며 전체 문서 점검·실제 공개 결과는 STATUS/CHANGELOG를 따른다.
+이번 작업 검토: 2026-11-04 실행 계획 전체 본문과 과거 검증/완료 이력을 재독하고 사용자 승인인 공개 저장소 생성·소스 검사·푸시와 데이터/비밀 제외 순서를 추가했다. PUBLIC main 푸시와 원격333개 일반 파일/gitlink0·공개 Python179/Node110·문서13개 검사 통과를 실제 결과로 반영했다. 신규 사진/학습·추론/임계값 변경·사이트 배포·운영 프로세스 조작은 수행하지 않았다. 소스 검증과 기존 학습/현장 검증을 구분하며 최종 원격/문서 커밋·전체 점검 정본은 STATUS/CHANGELOG다.
 
 ## 이전 작업: 애매한 사진 교체·34장 정본 (2026-11-02)
 

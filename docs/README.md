@@ -48,6 +48,6 @@ A/B 동시 운영과 GPU 대기의 설명은 README·SETUP·ARCHITECTURE, 실제
 
 이전 작업 검토(11/02): 2026-11-02 사진 명확성 교체를 기준으로 색인과 전체 본문을 다시 대조했다. 공개 v3 34장 정본·24유지/22퇴역/10추가·원문 권리/그룹·비공개 관리자 활성 집합 교체·기존 라운드 사진 보존을 반영하고 이전 46장 및 GPU 실험은 이력으로 보존했다. 관리 문서는 13개 그대로이고 새 Markdown은 없다. 분담 전수 재독 및 전체 점검·실제 게시/운영 검증 정본은 STATUS/CHANGELOG다.
 
-공개 소스는 [https://github.com/ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)에 생성한 저장소를 사용합니다. 실제 푸시/원격 확인은 STATUS를 따릅니다. 관리 Markdown13개는 모두 포함하고 외부 라이선스 문서는 보존하되 관리 문서 갱신 대상에서 구분합니다. 공개 내보내기는 소스에 포함되지 않는 로컬 결과/자료 링크만 일반 경로로 바꿉니다. 새 Markdown은 추가하지 않았습니다.
+공개 소스는 [ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)의 PUBLIC·main에 푸시했습니다. 최초 소스333파일과 원격 커밋 일치·gitlink0을 확인했고 상세 기록은 STATUS를 따릅니다. 관리 Markdown13개는 모두 포함하고 외부 라이선스 문서는 보존하되 관리 문서 갱신 대상에서 구분합니다. 공개 내보내기는 소스에 포함되지 않는 로컬 결과/자료 링크만 일반 경로로 바꿉니다. 새 Markdown은 추가하지 않았습니다.
 
-이번 작업 검토: 2026-11-04 색인과 전체 본문을 재검토하고 public GitHub 소스 범위·실제 운영/평가 산출물 제외·작성 도구 예외·로컬과 공개본 문서 표시를 반영했다. 관리13개 목록은 같으며 실제 게시와 전체 점검 결과는 STATUS/CHANGELOG가 정본이다.
+이번 작업 검토: 2026-11-04 색인과 전체 본문을 재검토하고 public main 초기 푸시·원격 대조·공개 소스 범위·실제 운영/평가 산출물 및 정답 빌더 제외·작성 도구 예외·공개본 링크 경로 변환을 반영했다. 관리13개 목록은 같고 원본/공개본 문서 검사와 UTF-8/링크/목록/설정JSON8개 검사가 통과했다. 최종 동기화와 상세 결과는 STATUS/CHANGELOG가 정본이다.

@@ -4,13 +4,15 @@
 
 ## 공개 GitHub 복제본 (2026-11-04)
 
-[ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) 공개 저장소 생성은 확인했다. 별도 `C:\Users\Administrator\Desktop\Alpha_Human_VS_AI`에서 새 초기 커밋을 준비하고 기존 작업 폴더와 Sites의 Git 이력/remote는 보존한다. 실제 푸시/원격 확인 결과는 상위 STATUS를 따른다.
+[ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)의 공개 `main` 첫 푸시와 원격 확인을 완료했다. 최초 소스 SHA `1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d`가 로컬/원격/GitHub tree와 일치하고 일반 파일333개·gitlink 0개다. 별도 `C:\Users\Administrator\Desktop\Alpha_Human_VS_AI`에서 공개 소스를 관리하며 기존 작업 폴더와 Sites의 Git 이력/remote는 보존했다. 후속 문서 동기화의 최신 커밋과 최종 점검은 상위 STATUS를 따른다.
 
-사용자 요청의 새 공개 저장소 이름은 `Alpha_Human_VS_AI`다. 프로젝트의 Python 코드와 이 웹 소스를 함께 준비하며, 공개 복제본의 웹 폴더는 일반 파일 트리이므로 submodule 초기화가 필요 없다. 원래 작업 폴더의 Sites용 `.git`와 배포 remote는 보존한다. 저장소 생성·푸시의 실제 완료 상태와 주소는 상위 [STATUS.md](../../docs/STATUS.md)를 따른다. GitHub 공개를 기존 사이트의 새 배포로 보고하지 않는다.
+사용자 요청의 새 공개 저장소 이름은 `Alpha_Human_VS_AI`다. 프로젝트의 Python 코드와 이 웹 소스를 함께 공개했으며, 공개 복제본의 웹 폴더는 일반 파일 트리이므로 submodule 초기화가 필요 없다. 원래 작업 폴더의 Sites용 `.git`와 배포 remote는 보존했다. 저장소 생성·푸시의 실제 완료 상태와 주소는 상위 [STATUS.md](../../docs/STATUS.md)를 따른다. GitHub 공개를 기존 사이트의 새 배포로 보고하지 않는다.
 
 사진/비공개 라벨·운영 D1/R2 데이터·가중치·Python 가상환경·`node_modules`·빌드/캐시·`.wrangler`/`.sites-runtime`·`.env`/비밀값·기기별 보정값·실행 로그는 포함하지 않는다. 아래의 로컬 사진/모델/보고서 경로는 별도 보관 자료이고 공개 clone만으로 운영 은행이나 학습 모델이 생기지 않는다. Python 엔진의 준비 항목은 상위 [SETUP.md](../../docs/SETUP.md)를 따른다.
 
 상위 `runs/`의 관리 QA·실험·문서 도구 스크립트는 개별 민감정보 검사 후 원래 경로로 공개하는 예외 대상이며 JSON 결과·카탈로그·로그·사진·실측 산출물은 제외한다. 도구 소스와 운영 데이터/모델/비밀값은 별도로 준비한다.
+
+과거 게시/재시작용 PowerShell 도구의 고정 PID·경로는 당시 이력이다. 현재 실행기로 그대로 사용하지 않으며 부스 시작은 프로젝트 루트의 `Start-Alpha-Remote.cmd` 절차를 따른다.
 
 새 복제본의 로컬 웹 의존성 설치 형식은 Node22.13 이상에서 `npm ci`, 이후 `npm run dev -- --hostname 127.0.0.1 --port 5186`이다. `.sites-runtime`의 실행 프로필 파일이 없으면 코드상 `portable`을 선택한다. 빈 저장소의 사진 출제는 준비성 검사로 거부하며, D1/R2·마이그레이션·허가된 사진/라벨·본인 배포 환경은 별도 구성한다. 명령 안내와 실제 새 기기에서의 재설치 검증은 구분한다.
 
@@ -166,4 +168,4 @@ legacy 실행기는 직접 봇 참가·브라우저 열기·모델/보정 전면
 
 이전 작업 검토(11/02 사진 교체): 2026-11-02 전체 README를 다시 읽고 사용자 요청의 애매한 사진 제외·명확한 사진 교체를 반영했다. 기존46장 중22장 제외/24장 유지와 새10장으로 선정한34장 은행, v3 정본·원문 권리/촬영 그룹·RGB/작은 타일 재검토·모델 예측을 쓰지 않은 선정을 기록했다. 인증된 활성 집합 원자 교체/includeInactive·SHA·기존 라운드 사진 보존/R2 삭제 없음의 코드를 대조했다. 실제 운영 등록·배포·활성 수와 검사 결과는 STATUS를 따르며 로컬 선정을 공개 적용 완료로 쓰지 않는다. 학교 미사용·고정 모델/임계값·FIFO·250ms 선택·40%/ONNX/Pi/legacy OS 입력 및 현장 리허설 미완료를 유지한다.
 
-이번 작업 검토: 2026-11-04 담당 문서 전체 본문을 다시 읽고 공개 GitHub 소스와 별도 운영 자산의 경계, 일반 웹 파일 포함과 원래 Sites Git 보존, 새 clone의 의존성/데이터/모델 준비를 대조했다. 공개 저장소 https://github.com/ProgrammingYJ/Alpha_Human_VS_AI 의 생성은 확인됐고 push 검증은 STATUS의 후속 실제 결과를 따른다. 이 문서 작업에서 모델/가중치/임계값·학교 사용·사진은행·서버 배포·운영 PC 프로세스·250ms/FIFO/프로토콜을 변경하지 않았다. 미완료 40%/ONNX/Pi/legacy OS 입력·현장 리허설을 유지하며 전체 문서 점검 정본은 STATUS/CHANGELOG다.
+이번 작업 검토: 2026-11-04 담당 문서 전체 본문을 다시 읽고 공개 GitHub 소스와 별도 운영 자산의 경계, 일반 웹 파일 포함과 원래 Sites Git 보존, 새 clone의 의존성/데이터/모델 준비를 대조했다. 공개 저장소 https://github.com/ProgrammingYJ/Alpha_Human_VS_AI 의 PUBLIC main 첫 푸시와 로컬/원격/GitHub tree 일치를 확인했다. 공개 소스 경로의 Python179개(12.565초)·Node110개 통과와 문서13개/설정 JSON8개 점검 결과를 확인했으며, 후속 문서 동기화의 최신 커밋/최종 감사는 STATUS를 따른다. 과거 고정 PID의 게시/재시작 PS1은 보관 소스이며 현재 운영 실행기로 쓰지 않음을 명시했다. 이 문서 작업에서 모델/가중치/임계값·학교 사용·사진은행·서버 배포·운영 PC 프로세스·250ms/FIFO/프로토콜을 변경하지 않았다. 미완료 40%/ONNX/Pi/legacy OS 입력·현장 리허설을 유지하며 전체 문서 점검 정본은 STATUS/CHANGELOG다.

@@ -2,7 +2,7 @@
 
 최종 검토: 2026-11-04 (Asia/Pyongyang)
 
-공개 소스 저장소: [https://github.com/ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) — 저장소 생성 완료, 초기 푸시/원격 검증은 [STATUS](docs/STATUS.md)에 기록합니다.
+공개 소스 저장소: [ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) — **PUBLIC·main 브랜치에 Python/웹 소스 푸시 완료**. 최초 소스 커밋은 `1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d`이며 원격 대조·공개 범위·검사는 [STATUS](docs/STATUS.md)에 기록합니다.
 
 공개본에는 Python ML/원격 엔진·웹 서버/화면·설정 예시·테스트·문서와 검토된 실험/관리 도구 소스를 담습니다. 실제 가중치·Kaggle/학교/운영 사진·정답은행·JSON 실행 결과·비밀 환경·가상환경·의존성 설치본은 제외합니다. 운영 정답표를 코드에 담은 검토 빌더 2개도 제외합니다. `runs/`에서는 비밀감사를 통과한 `.py/.mjs/.ps1/.cmd/.sh`만 예외로 포함합니다. 기존 Sites Git 기록은 공개하지 않고 웹 소스는 일반 파일로 포함합니다.
 
@@ -117,4 +117,4 @@ Python은 프로젝트 `.venv`, 웹은 `web/alpha-arena/`의 Node22/Vinext 소�
 
 이전 작업 검토(11/02): 2026-11-02 전체 본문을 다시 읽고 사진 명확성 교체(24장 유지·22장 퇴역·10장 추가·34장 은행), 관리자 활성 집합 교체와 기존 라운드 사진 보존을 반영했다. 모델의 정오답을 보고 사진을 고르거나 학습/임계값을 바꾸지 않았고 학교 미사용·250ms·현재 FIFO·40%/ONNX/Pi/OS 입력 미완료를 유지한다. 실제 배포·활성화·검사와 관리 13개 문서 점검 정본은 STATUS/CHANGELOG다.
 
-이번 작업 검토: 2026-11-04 전체 본문과 공개 범위·복제/설치 흐름을 재검토했다. GitHub public 저장소 생성, 민감/대용량 산출물 제외, 검토한 작성 도구 소스 보존 및 Sites 이력과 분리한 새 공개 소스 내보내기를 반영했다. 실제 초기 푸시/원격 검증·문서 점검은 STATUS/CHANGELOG를 정본으로 삼으며 운영 코드·모델·사진·배포·프로세스는 변경하지 않는다.
+이번 작업 검토: 2026-11-04 전체 본문과 공개 범위·복제/설치 흐름을 재검토했다. public main의 초기333파일 푸시와 원격 커밋 일치·gitlink0을 확인했고 공개 복사본 Python179/Node110 및 원본/공개본 문서13개 검사가 통과했다. 민감/대용량 산출물 및 정답 빌더2개를 제외하고 코드 바이트와 Sites 이력을 보존했다. 실제 검사·최종 문서 동기화는 STATUS/CHANGELOG가 정본이며 모델·사진·Sites 배포·운영 프로세스는 변경하지 않았다.

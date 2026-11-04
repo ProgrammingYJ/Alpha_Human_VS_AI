@@ -2,12 +2,12 @@
 
 최종 검토: 2026-11-04 (Asia/Pyongyang)
 
-## 2026-11-04 GitHub public 소스 저장소 준비
+## 2026-11-04 GitHub public 소스 저장소 생성·푸시
 
 - 사용자가 새 public 저장소 `Alpha_Human_VS_AI` 생성과 전체 프로젝트 소스 푸시를 요청했다. GitHub CLI의 현재 계정 ProgrammingYJ를 확인하고 https://github.com/ProgrammingYJ/Alpha_Human_VS_AI 생성/public 상태를 확인했다. 기존 동일 이름 저장소는 없었으며 기존 원격을 덮어쓰지 않았다.
 - 별도 Desktop/Alpha_Human_VS_AI 소스 체크아웃에 Python/웹을 일반 파일로 내보내 기존 Sites Git과 운영 폴더를 보존한다. 원본/모델/사진/정답은행/로그/JSON 결과/자격/의존성·생성물/과거 Git은 제외한다. 작성한 runs 도구 소스는 개별 검사 후 보존하며 원시 운영 정답을 담은 빌더2개는 제외한다.
 - .gitignore의 웹·비밀·모델/실행 결과 제외와 작성 코드 예외를 보강하고 scripts/export_public_source.py를 추가했다. 공개 Markdown에서 제외된 로컬 결과 링크만 일반 경로로 표시하며 원본 코드는 바꾸지 않는다.
-- 초기 푸시·복제본 검사/원격 확인은 진행 중이고 실제 결과는 완료 후 반영한다. ML·사진·Sites 배포·운영 프로세스 변경은 없다.
+- PUBLIC main에 최초333파일을 푸시했고 첫소스SHA1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d가 로컬/ls-remote/GitHubtree에서 일치했다. GitHub 기본main·empty=false·333개mode100644·gitlink0을 확인했다. 공개복사본 코드 바이트/필수vendor/비밀·자료 제외 독립 감사 및 Python179(12.565초)/Node110·원본/공개본 문서13개/UTF8/링크/설정JSON8개 검사가 통과했다. 결과 갱신 문서도 같은 main으로 동기화한다. 새 의존성 재설치·ML 운영·Sites 재배포 검사는 수행하지 않았다.
 
 ### 이번에 읽고 갱신한 전체 Markdown (13개)
 
@@ -25,7 +25,7 @@
 - docs/CHANGELOG.md
 - web/alpha-arena/README.md
 
-이번 작업 검토: 관리13개 본문을 분담 재독하고 GitHub 생성·공개 범위·별도 소스 스냅샷 및 기존 운영 보존과 대조했다. 전체 문서 검사·소스 검사·실제 푸시/원격 결과는 완료 후 확정한다.
+이번 작업 검토: 관리13개 전체 본문을 분담 재독·11/04 갱신하고 실제 GitHub public main 푸시·원격 일치·복사본 코드/제외 범위·독립 감사·Python179/Node110 및 원본/공개본 문서13개 통과를 기록했다. 원래 Sites 이력/운영 폴더·모델/사진/배포/프로세스는 보존했다. 최종 문서 동기화의 원격 커밋/공개 상태는 로컬 release 기록으로 확인한다.
 
 ## 2026-11-02 사진 명확성 교체·관리 활성 집합·버전13
 
