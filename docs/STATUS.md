@@ -24,7 +24,7 @@
 
 이전 **21536→43456→38212**는 절대 경로/부모 관계를 확인한 뒤 이 업데이트를 위해 해당 체인만 종료했다. 새 정규 운영 체인 **41224→42632→41396**의 경로/부모 관계와 생존을 확인해 계속 켜 두었다. 두 Python PID는 한 가상환경 실행 체인이다. 신규 가동 (로컬 산출물: `runs/session-reset-20261105/operator-start.json`), startup (로컬 산출물: `runs/remote-engine/20261105-160822-58d04071/startup.json`)은 CUDA·parallel2슬롯·CUDA2stream·가중치 한 벌 공유·두 worker 합성 예열 완료이며 load6.500초+warm3.672초=전체10.172초다. 에이전트의 사용자 A/B 코드 입력0으로 특정 사용자 방 준비 완료는 주장하지 않는다. 아래의 모든 과거 PID/startup은 당시 이력이며 현재 생존의 근거로 재사용하지 않는다.
 
-**완료:** v14 게시/경계 적용·이전 권한 철회/새 연결 공개 QA·서버/UI/Python 회귀·IAB 수동 reset 초기 화면·정규 PC 재기동/생존 확인. **남음:** 사용자 외부 네 화면 reset/새 A/B 방 최초 연결·한 판/연속 참가자·실제 옛 브라우저410 자동 복구·행사 장시간/네트워크 리허설과 기존40%/ONNX/Pi/legacy OS 입력이다. 이번 새 모델 학습·ML 정확도/속도 측정·사진 교체·학교 사용·Windows OS 재부팅은 없다. GitHub 후속 소스 동기화는 별도 결과를 따른다.
+**완료:** v14 게시/경계 적용·이전 권한 철회/새 연결 공개 QA·서버/UI/Python 회귀·IAB 수동 reset 초기 화면·정규 PC 재기동/생존 확인. **남음:** 사용자 외부 네 화면 reset/새 A/B 방 최초 연결·한 판/연속 참가자·실제 옛 브라우저410 자동 복구·행사 장시간/네트워크 리허설과 기존40%/ONNX/Pi/legacy OS 입력이다. 이번 새 모델 학습·ML 정확도/속도 측정·사진 교체·학교 사용·Windows OS 재부팅은 없다. 공개348파일의 코드 바이트/민감 자료 제외 감사 findings0을 확인하고 초기화 구현 커밋 `bf8a7d2a684b95dc23e76cce41b40432d21c816c`를 기존 GitHub PUBLIC main에 푸시했다. 결과 문서도 후속 동기화한다.
 
 사용자 복구 순서는 각 [인간 A](https://human.marulee.dev/?lane=A&reset=1)·[봇 A](https://bot.marulee.dev/?lane=A&reset=1)·[인간 B](https://human.marulee.dev/?lane=B&reset=1)·[봇 B](https://bot.marulee.dev/?lane=B&reset=1)의 옛 저장소 제거→인간 A/B 새 방 생성→같은 레인의 AI 표시와 PC 콘솔에 새 코드 최초 연결이다. 실행기는 하나만 사용하고 이후 정상 참가자 교체는 같은 방의 다음 참가자 준비를 유지한다. 코드를 파일/인자/로그에 옮기지 않는다.
 
@@ -40,6 +40,8 @@ node --test server/session-reset.test.mjs components/arena-session.test.mjs
 공개 철회 검증 도구는 `runs/session-reset-20261105/verify_reset.py`이며 첫 단계와 게시 뒤 단계 사이에 코드/토큰을 RAM으로 유지하는 운영 QA다. 단순히 완료한 초기화 경계에 도구를 재실행해 옛 방이 생성됐다고 가정하지 않는다. 새 전역 init의 경계/게시와 연계하고 기존 결과를 덮어쓰지 않는다. 숨긴 QA 권한은 공개 모델 입력과 분리한다. Node118개 전체 단위 명령과 build·공개 surface의 실행 상세는 해당 배포/QA 기록을 따른다.
 
 이번 작업 검토: 운영 init — 2026-11-05 관리13개 전체 본문과 과거 이력을 재독·갱신하며 기존 역할 해시·PC/브라우저 메모리 차이와 논리적 철회·새 방 복구를 대조했다. 실제 v14/환경6·cutoff·공개 이전8권한 철회/새 A/B 연결·Node118/Python194·IAB 초기 화면과 신규 startup/생존을 확인한 범위로 기록한다. `check_docs.py --date 2026-11-05`의13개 및 별도 전수 감사의UTF-8·로컬 링크·전체 목록·설정JSON8개가 모두 통과했다. 문서 감사 (로컬 산출물: `runs/session-reset-20261105/document-audit-agent.json`)는 기계 검사이며 본문은 별도로 직접 대조했다. 새 Markdown은 없다.
+
+마무리 점검: 원본/공개본 관리 Markdown13개 점검과 별도 UTF-8·로컬 링크·전체 목록·설정JSON8개 감사, Git diff 검사를 통과했다. root의 최종 전수 감사는 `runs/session-reset-20261105/document-audit-final.json`이다. PC 운영 엔진은 사용자 최초 새 코드 입력을 받도록 유지한다.
 
 ## 이전 작업: A/B 실제 병렬 추론 적용 (2026-11-05)
 

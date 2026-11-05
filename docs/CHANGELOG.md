@@ -31,6 +31,8 @@
 
 이번 작업 검토: 운영 init — 위13개 전체 본문/이력을 재독·갱신하고 연결 철회·브라우저/PC 복구·실물 자료 보존과 대조했다. 새 Markdown은 없으며 변경 없는 데이터/모델 문서에도 검토 결과를 기록했다. 실제 v14/환경6·이전권한8개410/새A/B연결·코드검사·IAB초기화면·새운영가동과남은사용자최초재연결/실제기기검증을구분한다. `check_docs.py --date 2026-11-05`의13개와 별도UTF-8/로컬링크/전체목록/설정JSON8개감사가 모두통과했다. 정본은 runs/session-reset-20261105/document-audit-agent.json이며 기계검사를 본문 직접검토와 구분한다.
 
+마무리 점검: 원본/공개본 관리13개와 UTF-8/로컬 링크/전체 목록/설정JSON8개 전수 감사·Git diff를 통과했다. root 정본은 runs/session-reset-20261105/document-audit-final.json이다. 공개348파일 코드 바이트/민감 자료 제외 감사 findings0 뒤 초기화 구현 커밋bf8a7d2a684b95dc23e76cce41b40432d21c816c를 기존 GitHub PUBLIC main에 푸시했고 결과 문서도 후속 동기화한다. 새 PC 엔진은 사용자 최초 A/B 코드 입력용으로 유지한다.
+
 ## 2026-11-05 A/B 실제 병렬 추론과 운영 엔진 업데이트
 
 - 사용자의 FIFO 시험 제보/병렬 요청을 반영해 기본 SharedModels를 독립2슬롯·공유weights·worker별processor/진단·CUDA2stream으로 바꿨다. 준비/카운트다운도 함께 진행하고 자기 stream만 동기화한다. CLI/PS 기본 parallel, explicit serial 복구 및 startup/round 모드 메타데이터를 추가했다.
