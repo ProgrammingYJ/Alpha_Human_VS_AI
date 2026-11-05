@@ -58,7 +58,9 @@
 .\.venv\Scripts\python.exe -X utf8 runs/site-publish/audit_docs.py --date 2026-11-05 --output runs/parallel-operating-20261105/document-audit.json
 ```
 
-이번 작업 검토: 관리 Markdown13개 전체를 분담 재독하고 최신 parallel 정책·실제 CPU/CUDA/공개 두 방 결과·새 가동을 반영했다. 기존 FIFO 측정은 이력으로 보존한다. 가중치/임계값·사진·학교 미사용·40%/ONNX/Pi/legacy OS 입력 상태는 바꾸지 않았다. 남은 작업은 사용자 실제 외부 컴퓨터 A/B 재시험·연속 참가자/장시간 리허설과 기존 미완료 항목이다. 전체 문서 점검 결과는 아래 완료 기록과 CHANGELOG를 따른다.
+이번 작업 검토: 관리 Markdown13개 전체를 분담 재독하고 최신 parallel 정책·실제 CPU/CUDA/공개 두 방 결과·새 가동을 반영했다. 기존 FIFO 측정은 이력으로 보존한다. 가중치/임계값·사진·학교 미사용·40%/ONNX/Pi/legacy OS 입력 상태는 바꾸지 않았다. 남은 작업은 사용자 실제 외부 컴퓨터 A/B 재시험·연속 참가자/장시간 리허설과 기존 미완료 항목이다.
+
+완료 점검: 원본/공개본 `check_docs.py --date 2026-11-05`의13개가 통과했고 별도 전수 감사도 UTF-8·로컬 링크·전체 문서 목록·설정JSON8개 오류0이다. 최종 감사는 `runs/parallel-operating-20261105/document-audit-final.json`에 기록한다. 공개 내보내기342파일의 코드 바이트/민감 자료 제외 검사 findings0과 Git diff 검사를 통과했다. 병렬 구현 커밋 `9fde9c77a707b4dbe599339e7cd70c8a09f2c3ca`를 기존 [PUBLIC main](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)에 푸시하고 로컬/원격 SHA 일치를 확인했다. 결과 기록 문서도 후속 동기화한다. 마무리 생존 조회에서21536→43456→38212를 확인했고 사용자 재시험용으로 계속 켜 둔다.
 
 ## 이전 작업: 외부 컴퓨터 시험용 FIFO PC 엔진 가동 (2026-11-05)
 

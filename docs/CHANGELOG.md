@@ -27,7 +27,7 @@
 - docs/CHANGELOG.md
 - web/alpha-arena/README.md
 
-이번 작업 검토: 위13개 전체 본문을 분담 재독·갱신했고 새 Markdown은 없다. 실제 변경/검증/미완료·재현 명령을 STATUS에 기록했다. 문서 점검은 최종 완료 기록에 실제 결과로 남긴다.
+이번 작업 검토: 위13개 전체 본문을 분담 재독·갱신했고 새 Markdown은 없다. 실제 변경/검증/미완료·재현 명령을 STATUS에 기록했다. 원본/공개본 문서13개 점검과 별도 UTF-8/링크/목록/설정JSON8개 감사·Git diff가 통과했으며 최종 감사 정본은 runs/parallel-operating-20261105/document-audit-final.json이다. 공개 내보내기342파일 민감 자료/코드 바이트 검사 findings0, 병렬 구현 커밋9fde9c77a707b4dbe599339e7cd70c8a09f2c3ca를 기존 PUBLIC main에 푸시하고 로컬/원격 SHA 일치를 확인했다. 결과 문서도 후속 동기화한다. 최종 조회에서 새 운영 체인21536→43456→38212가 생존 중이며 종료하지 않았다.
 
 ## 2026-11-05 외부 컴퓨터 시험용 서버 확인·PC 엔진 가동
 
