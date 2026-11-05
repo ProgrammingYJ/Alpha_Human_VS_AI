@@ -1,4 +1,4 @@
-"""Run actual PC ML for two remote pad lanes; no browser/OS automation."""
+"""Run actual PC ML for two remote A/B lanes; no browser/OS automation."""
 
 import argparse
 import getpass
@@ -20,7 +20,7 @@ def load_models(args):
     from alpha_captcha.tree_model import TreeCountPredictor
     predictor = TorchTilePredictor.from_checkpoints(args.presence, args.person, device=args.device)
     tree = TreeCountPredictor(args.tree_model_dir, device=args.device)
-    return SharedModels(predictor, tree)
+    return SharedModels(predictor, tree, execution_mode=args.inference_mode)
 
 
 def main():
@@ -32,6 +32,8 @@ def main():
     parser.add_argument("--execute", action="store_true", help="join/heartbeat/select/submit actual remote rooms")
     parser.add_argument("--once", action="store_true", help="finish one round in each supplied room, then exit; default keeps room connections")
     parser.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    parser.add_argument("--inference-mode", choices=["parallel", "serial"], default="parallel",
+                        help="parallel: two independent A/B workers and CUDA streams; serial: one FIFO worker")
     parser.add_argument("--presence", type=Path, default=Path("models/checkpoints/presence-limited-v1/presence.pt"))
     parser.add_argument("--person", type=Path, default=Path("models/checkpoints/person-limited-v1/person.pt"))
     parser.add_argument("--tree-model-dir", type=Path, default=Path("models/pretrained/grounding-dino-tiny"))
@@ -81,6 +83,8 @@ def main():
         return 1
     (args.output / "startup.json").write_text(json.dumps({
         "mode": "remote", "device": args.device, "models_loaded_once": True,
+        "requested_inference_mode": args.inference_mode,
+        **(models.execution_metadata() if isinstance(models, SharedModels) else {}),
         "model_loading_seconds": model_loading_seconds, "synthetic_warmup": warmup,
         "startup_total_seconds": time.monotonic() - started, "gui_used": False,
         "credentials_logged": False, "model_or_threshold_tuning_performed": False,
@@ -88,10 +92,14 @@ def main():
         "public_image_download_workers": 3, "image_readiness_barrier_supported": True,
         "server_protocol_negotiation": "2_for_v11_missing_capability_3_for_barrier_server"}, indent=2) + "\n", encoding="utf-8")
     print("모델 로드와 합성 이미지 예열을 마쳤습니다. 실제 문제는 공통 출발 후에만 판별합니다.", flush=True)
+    if isinstance(models, SharedModels):
+        execution = models.execution_metadata()
+        print(f"추론 모드: {execution['inference_mode']} · 동시 작업 {execution['max_concurrent_inferences']}개 · "
+              f"CUDA 스트림 {execution['cuda_stream_count']}개 · 모델 가중치 한 세트 공유", flush=True)
     transport = ControlledTransport(args.base_url)
     messages = {"ready": "모델 준비 완료 · AI 표시 화면 연결 후 인간 화면에서 시작하세요.",
-                "waiting_gpu": "시작 요청을 받았습니다. 경기 타이머 밖에서 GPU 순서를 기다립니다.",
-                "reserved": "GPU를 예약했습니다. 사진 준비와 서버 공통 출발을 기다립니다.",
+                "waiting_gpu": "시작 요청을 받았습니다. 경기 타이머 밖에서 추론 작업 슬롯을 준비합니다.",
+                "reserved": "이 레인의 추론 슬롯을 예약했습니다. 사진 준비와 서버 공통 출발을 기다립니다.",
                 "loading_images": "경기 시작 전에 사진 9장을 내려받아 준비합니다. 타이머는 아직 시작하지 않습니다.",
                 "images_ready": "PC 사진 준비 완료 · 인간/AI 표시 화면의 사진 준비와 공통 출발을 기다립니다.",
                 "start_cancelled": "시작 대기가 취소 또는 만료됐습니다. 같은 인간 화면에서 다시 시작할 수 있습니다.",

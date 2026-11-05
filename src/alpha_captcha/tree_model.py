@@ -6,6 +6,7 @@ is performed by inference; run scripts/fetch_tree_model.py once beforehand.
 """
 
 from dataclasses import dataclass, asdict
+import copy
 import json
 import math
 from pathlib import Path
@@ -55,6 +56,24 @@ class TreeCountPredictor:
         ).to(self.device).eval()
         self.provenance = {**provenance, "profile": asdict(self.profile), "device": str(self.device)}
         self.last_detections = []
+
+    def fork_for_inference(self):
+        """Share eval weights, but keep preprocessing and diagnostics per worker."""
+        if any(module.training for module in self.model.modules()):
+            raise ValueError("shared tree model must already be in evaluation mode")
+        for tensor in (*self.model.parameters(), *self.model.buffers()):
+            if (tensor.device.type != self.device.type
+                    or self.device.index is not None and tensor.device.index != self.device.index):
+                raise ValueError("shared tree model must already be on the requested device")
+        worker = copy.copy(self)
+        # Grounding DINO's processor contains mutable image settings and tokenizer
+        # state. Neither it nor the most recent detections belongs to the model.
+        worker.processor = copy.deepcopy(self.processor)
+        worker.provenance = copy.deepcopy(self.provenance)
+        worker.last_detections = []
+        return worker
+
+    fork_for_worker = fork_for_inference
 
     def predict_counts(self, images: Sequence[Image.Image]) -> list[int]:
         import torch

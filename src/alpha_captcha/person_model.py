@@ -141,9 +141,12 @@ def set_person_training_mode(model):
             module.eval()
 
 
-def predict_person(model, images: list[Image.Image], profile: PersonTrainingProfile, *, device=None):
+def predict_person(model, images: list[Image.Image], profile: PersonTrainingProfile, *, device=None, prepare_model=True):
     device = torch.device(device or next(model.parameters()).device)
-    model.eval()
+    if prepare_model:
+        model.eval()
+    elif any(module.training for module in model.modules()):
+        raise ValueError("shared person model must already be in evaluation mode")
     inputs, geometries = [], []
     for image in images:
         tensor, _, geometry = letterbox_person(image, size=profile.input_size)

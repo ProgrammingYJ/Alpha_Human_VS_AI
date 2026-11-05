@@ -1,6 +1,58 @@
 # 작업 이력
 
-최종 검토: 2026-11-04 (Asia/Pyongyang)
+최종 검토: 2026-11-05 (Asia/Pyongyang)
+
+## 2026-11-05 A/B 실제 병렬 추론과 운영 엔진 업데이트
+
+- 사용자의 FIFO 시험 제보/병렬 요청을 반영해 기본 SharedModels를 독립2슬롯·공유weights·worker별processor/진단·CUDA2stream으로 바꿨다. 준비/카운트다운도 함께 진행하고 자기 stream만 동기화한다. CLI/PS 기본 parallel, explicit serial 복구 및 startup/round 모드 메타데이터를 추가했다.
+- 모델 public serial API는 유지하며 fork_for_inference/fork_for_worker와 readonly 예측을 추가했다. 학습/전처리/임계값·모델 선택/학교/사진 변경0이다.
+- 전체 Python193개15.955초 통과, 신규병렬9/ML문맥5·이전serial회귀 유지·CLI/PS 검사 통과. 실제GPU16조건쌍×각mode3회 결과차0·OOM0·weights공유, Kineto44969kernel중서로다른2stream실제겹침0.553852초를 확인했다. 일부조합은느려지며 지연0/50%분할/정확도 보장이 아니다.
+- 공개 A/B 새 QA방 각1판에서 양lane loading게이트·각표시9사진PILdecode/3역할준비·공통출발후ML1/plan1·250ms·RGB재사용·표시선택일치 모두통과. 실제외부브라우저/현장리허설과구분한다. 산출물정본은 runs/parallel-operating-20261105/cuda-report.json 및 live-v1/verification.json이다.
+- 이전운영체인43132→17060→38628을절대경로/부모검사후업데이트용으로종료하고 GPU검사뒤새운영체인21536 → 43456 → 38212을켜뒀다. startup parallel2슬롯/2stream·두worker예열·생존검증완료. 토큰메모리전용이므로 사용자새A/B방최초재연결1회가필요하고이후같은방교체다. 새정본 operator-start.json/STATUS를따른다. 서버v13은재배포하지않았다.
+- 남음: 사용자외부컴퓨터 A/B재시험·연속참가자/장시간부하, 기존40%/ONNX/Pi/legacyOS입력. 기존FIFO/11/02후보수치는이력으로보존했다.
+
+### 이번에 읽고 갱신한 전체 Markdown (13개)
+
+- AGENTS.md
+- README.md
+- docs/README.md
+- docs/SETUP.md
+- docs/ARCHITECTURE.md
+- docs/DATASET.md
+- docs/DATASET_CANDIDATES.md
+- docs/EXECUTION_PLAN.md
+- docs/INTEGRATION.md
+- docs/ROADMAP.md
+- docs/STATUS.md
+- docs/CHANGELOG.md
+- web/alpha-arena/README.md
+
+이번 작업 검토: 위13개 전체 본문을 분담 재독·갱신했고 새 Markdown은 없다. 실제 변경/검증/미완료·재현 명령을 STATUS에 기록했다. 문서 점검은 최종 완료 기록에 실제 결과로 남긴다.
+
+## 2026-11-05 외부 컴퓨터 시험용 서버 확인·PC 엔진 가동
+
+- 기존 공개 Sites active/public·최신v13을 확인하고 human/bot의 A/B 페이지 및 health6개 모두HTTP200·protocol3/barrier/250ms를 확인했다. 서버 재배포·자격/환경·사진·방 변경은 없다.
+- 기존 엔진0개 확인 후 정규 start_remote_engine.ps1을 코드 입력용 새 visible 콘솔로 시작했다. 현재 체인43132→17060→38628의 실행경로/부모 관계·생존과 새 startup을 확인했다. CUDA3모델 load15.046초+합성warm3.657초=18.703초 완료, 문제사진0·agent코드입력0이며 계속 켜 둔다. 정본은 runs/server-readiness-20261105/operator-start.json/public-http-check.json과 runs/remote-engine/20261105-153228-f21fc803/startup.json이다.
+- 한 콘솔 A/B 최초코드 입력·공개 HTTPS 4주소·PC 준비/AI 표시 연결·세 역할 사진 준비/출발·같은 방 next 순서를 다시 확인했다. 사용자는 단일 엔진 A/B 연결을 이해하고 외부 시험을 진행하기로 했다. 추가 엔진/브라우저 창은 열지 않았고 실제 외부 컴퓨터/한 판 결과는 미수신이다.
+- 모델/학습/임계값·운영사진/학교·40%/ONNX/Pi/legacy OS 입력 상태는 그대로다. 새 제품 코드 변경이나 전체 단위 테스트 재실행 없이 실제 기동/합성 예열·HTTP로 확인했다. 11/04 GitHub 공개는 이력으로 보존하고 이번에는 원격 소스를 다시 푸시하지 않았다.
+
+### 이번에 읽고 갱신한 전체 Markdown (13개)
+
+- AGENTS.md
+- README.md
+- docs/README.md
+- docs/SETUP.md
+- docs/ARCHITECTURE.md
+- docs/DATASET.md
+- docs/DATASET_CANDIDATES.md
+- docs/EXECUTION_PLAN.md
+- docs/INTEGRATION.md
+- docs/ROADMAP.md
+- docs/STATUS.md
+- docs/CHANGELOG.md
+- web/alpha-arena/README.md
+
+이번 작업 검토: 관리13개 전체 본문을 분담 재독·11/05 갱신하고 현재 PC 기동/공개 HTTP와 미확인 외부 시험을 구분했다. 운영 엔진을 사용자 시험용으로 계속 유지한다. `check_docs.py --date 2026-11-05`의13개 및 별도 전수 감사의 UTF-8/로컬 링크/전체 목록/설정JSON8개 모두 통과했다. 기록은 runs/server-readiness-20261105/document-audit.json이다. 마무리 생존 조회에서도 새 운영 프로세스 체인을 확인했고 종료하지 않았다.
 
 ## 2026-11-04 GitHub public 소스 저장소 생성·푸시
 

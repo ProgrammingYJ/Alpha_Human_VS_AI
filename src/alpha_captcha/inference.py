@@ -1,6 +1,7 @@
 """Pixel-only PyTorch tile inference. ONNX and live capture remain separate."""
 
 from collections.abc import Sequence
+import copy
 from typing import Protocol
 import time
 
@@ -30,6 +31,34 @@ class TorchTilePredictor:
         self.person_model = person_model
         self.person_profile = person_profile
         self.device = device
+        self._prepare_models = True
+
+    def fork_for_inference(self):
+        """Share prepared eval weights while isolating a worker's mutable context.
+
+        Call before dispatching concurrent work. Checkpoint loading already moves
+        both models to their final device; workers must never change train/eval
+        state or move shared parameters during inference.
+        """
+        import torch
+        target_device = torch.device(self.device)
+        for model in (self.presence_model, self.person_model):
+            if any(module.training for module in model.modules()):
+                raise ValueError("shared inference models must already be in evaluation mode")
+            for tensor in (*model.parameters(), *model.buffers()):
+                if (tensor.device.type != target_device.type
+                        or target_device.index is not None and tensor.device.index != target_device.index):
+                    raise ValueError("shared inference models must already be on the requested device")
+        worker = copy.copy(self)
+        worker.presence_metadata = copy.deepcopy(self.presence_metadata)
+        worker._prepare_models = False
+        return worker
+
+    fork_for_worker = fork_for_inference
+
+    def _inference_options(self):
+        # Preserve the existing serial API and its preparation defaults.
+        return {} if self._prepare_models else {"prepare_model": False}
 
     @classmethod
     def from_checkpoints(cls, presence_checkpoint, person_checkpoint, *, device="cpu"):
@@ -45,8 +74,9 @@ class TorchTilePredictor:
         from .person_model import predict_person
         if len(images) != 9 or any(not isinstance(image, Image.Image) for image in images):
             raise ValueError("exactly nine PIL RGB tile images are required")
-        scores = predict_presence(self.presence_model, images, device=self.device)
-        people = predict_person(self.person_model, images, self.person_profile, device=self.device)
+        options = self._inference_options()
+        scores = predict_presence(self.presence_model, images, device=self.device, **options)
+        people = predict_person(self.person_model, images, self.person_profile, device=self.device, **options)
         return [TilePrediction(presence_scores=score, person_count=person["person_count"])
                 for score, person in zip(scores, people)]
 
@@ -65,9 +95,9 @@ class TorchTilePredictor:
                 or any(not isinstance(image, Image.Image) for image in images)):
             raise ValueError("public condition and exactly nine PIL RGB tiles required")
         if condition.task_type in PRESENCE_TASKS:
-            scores = predict_presence(self.presence_model, images, device=self.device)
+            scores = predict_presence(self.presence_model, images, device=self.device, **self._inference_options())
             return [TilePrediction(presence_scores=score) for score in scores]
-        people = predict_person(self.person_model, images, self.person_profile, device=self.device)
+        people = predict_person(self.person_model, images, self.person_profile, device=self.device, **self._inference_options())
         return [TilePrediction(person_count=person["person_count"]) for person in people]
 
     def solve_grid(self, image, condition: TaskCondition):

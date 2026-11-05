@@ -169,7 +169,7 @@ class ReservationTests(unittest.TestCase):
             clock.sleep(2)
             return [TilePrediction({"building": 0.1}, 0)] * 9
         predictor.predict_tiles = predict
-        models, timings = remote.SharedModels(predictor, None), {}
+        models, timings = remote.SharedModels(predictor, None, execution_mode="serial"), {}
         def guard(): clock.sleep(5); return True
         selected, _ = models.infer([Image.new("RGB", (4, 4)) for _ in range(9)], CONDITION,
                                   active=guard, timings=timings, clock=clock)
@@ -183,7 +183,7 @@ class ReservationTests(unittest.TestCase):
         for failing in ("cancel", "decode", "begin"):
             with self.subTest(failing=failing):
                 clock, predictor = Clock(), Predictor()
-                models = remote.SharedModels(predictor, None)
+                models = remote.SharedModels(predictor, None, execution_mode="serial")
                 room = Room(models, clock)
                 if failing == "cancel":
                     views = [0]
@@ -216,7 +216,7 @@ class ReservationTests(unittest.TestCase):
                 if not release_a.wait(2): raise AssertionError("fixture timed out")
             return [TilePrediction({"building": 0.9 if index in (0, 4) else 0.1}, 0) for index in range(9)]
         predictor.predict_tiles = predict
-        models = remote.SharedModels(predictor, None)
+        models = remote.SharedModels(predictor, None, execution_mode="serial")
         def first_select():
             if not b_began.wait(1): raise AssertionError("A selection held B's GPU reservation")
         a, b = Room(models, clock, first_select=first_select), Room(models, clock, lane="B", began=b_began)

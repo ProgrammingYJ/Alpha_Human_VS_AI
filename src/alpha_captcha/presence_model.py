@@ -454,14 +454,18 @@ def load_presence_checkpoint(path: Path | str, *, device: str = "cpu") -> tuple[
 
 def predict_presence(
     model: PresenceNet, images: Sequence[Image.Image], *, device: str | None = None, batch_size: int = 8,
+    prepare_model: bool = True,
 ) -> list[dict[str, float]]:
-    """Only PIL pixels enter the model; no filenames, source IDs or answer data."""
+    """Only PIL pixels enter the model; optionally use already prepared weights."""
     if type(batch_size) is not int or batch_size <= 0:
         raise ValueError("batch_size must be a positive integer")
     if any(not isinstance(image, Image.Image) for image in images):
         raise TypeError("predict_presence accepts PIL images only")
     target_device = _device(device) if device is not None else next(model.parameters()).device
-    model.to(target_device).eval()
+    if prepare_model:
+        model.to(target_device).eval()
+    elif any(module.training for module in model.modules()):
+        raise ValueError("shared presence model must already be in evaluation mode")
     result = []
     with torch.inference_mode():
         for start in range(0, len(images), batch_size):

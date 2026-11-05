@@ -530,7 +530,7 @@ class RemoteRuntimeTests(unittest.TestCase):
                     raise RuntimeError("fixture timed out")
                 return [TilePrediction({"building": 0.9}, 0)] * 9
         predictor = Predictor()
-        shared = remote.SharedModels(predictor, None)
+        shared = remote.SharedModels(predictor, None, execution_mode="serial")
         class Room:
             def heartbeat(self, stage, **kwargs):
                 beat_seen.set()

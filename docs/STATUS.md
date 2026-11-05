@@ -1,8 +1,107 @@
 # 현재 진행 상황
 
-최종 검토: 2026-11-04 (Asia/Pyongyang)
+최종 검토: 2026-11-05 (Asia/Pyongyang)
 
-## 최신 작업: GitHub public 저장소 생성·소스 푸시 (2026-11-04)
+## 최신 작업: A/B 실제 병렬 추론 적용 (2026-11-05)
+
+사용자가 외부 시험에서 기존 FIFO를 확인하고 병렬 연산을 명시적으로 요청했다. 기존 한 개 GPU 잠금을 기본 경로에서 제거하고 **parallel 독립 슬롯2개·CUDA 스트림2개**로 바꿨다. A/B 각각 사진 준비·카운트다운·추론을 진행하며 다른 레인의 완료를 기다리지 않는다. 모델 가중치 한 세트는 공유하고 processor/tokenizer·입력·진단 상태는 worker별로 분리한다. 읽기 전용 예측에서는 model.to/eval을 반복하지 않으며 해당 CUDA 스트림만 동기화한다. `--inference-mode serial` / PowerShell `-InferenceMode serial`만 이전 FIFO 비교/복구 경로다.
+
+### 실제 검증
+
+- 전체 Python **193개 통과, 15.955초**. 새 병렬 회귀9개와 ML 문맥5개를 포함한다. 두 레인의 begin/사진/RGB 재사용/카운트다운/모델 동시 진입·회차 변경 차단·한쪽 취소/예외 독립·슬롯 반환·250ms·명시적 serial 직렬 검사를 확인했다. CLI 구문/도움말과 PowerShell 파서도 통과했다.
+- RTX 4070 Laptop에서 실제 운영 SharedModels의 serial/parallel을 공개 저장 RGB9장씩 두 세트로 비교했다. 사전 고정 네 조건의 **16쌍×각 모드3회**, 합96회 두 작업 실행에서 선택 및 보고 예측 최대 차이0, weights 동일 객체, OOM0이었다. 정답은행·학습·임계값 변경·학교 사진·실제 브라우저/OS 입력0이다. CUDA 보고서 (로컬 산출물: `runs/parallel-operating-20261105/cuda-report.json`).
+- 별도 tree/tree Kineto 추적은 **44,969개 CUDA 커널, 서로 다른 stream17/21의 실제 커널 겹침 0.553852초**를 기록했다. CPU 호출 시간만으로 병렬을 추정하지 않았다. 이 한 추적의 GPU busy 합집합은 2.857961초다. 프로파일러 부하가 있는 추적을 아래 속도 중앙값과 섞지 않는다. GPU50% 고정 분할·모든 커널 동시 실행·모든 조합 단축·지연0 보장은 아니다. 커널 추적 (로컬 산출물: `runs/parallel-operating-20261105/cuda-report-tree-tree-trace.json`).
+- 전체 비교에서 PyTorch 최대 allocated 1522.18MiB / reserved 3226MiB. 이는 PyTorch 관측값이며 OS/다른 앱 포함 전체 VRAM이나 장시간 한계 측정이 아니다.
+- 공개 human/bot 서로 다른 호스트에서 새 QA A/B 두 방을 만들고 production PC 엔진으로 각 한 판을 실행했다. **A/B가 모두 loading에 도달하기 전 어느 HTTP 표시 역할도 사진 준비 ACK를 하지 않는 게이트를 통과**하여 기존 단일 FIFO의 준비 직렬화가 없음을 확인했다. 각 역할9장 실제 PIL 디코딩·세 역할 준비 뒤 공통 출발·출발 후 모델1회·고정 계획1회·250ms 일정·경기 중 사진 다운로드0·RGB 캐시 재사용·표시 선택과 모델 결과 일치가 두 방 모두 통과했다. 코드는 RAM에서만 처리하며 정답/관리 데이터·URL/토큰 로그0이다. 공개 두 방 보고서 (로컬 산출물: `runs/parallel-operating-20261105/live-v1/verification.json`).
+- 공개 QA는 A 건물/B 연못이었고 두 방의 startAt 차이255ms, 짧은 모델 호출의 실제 겹침은0초였다. 이 QA는 독립 준비/출발/선택 연결의 증거이며 실제 GPU 동시 실행의 증거는 위 별도 저장 RGB Kineto 추적이다.
+- 공개 QA의 표시 역할은 **HTTP/PIL 대역**이다. 실제 외부 Chrome 렌더링/기기·네트워크 리허설·장시간 부하·정확도/40%를 검증했다고 확대하지 않는다. 두 방의 절대 출발은 같을 필요가 없고 각 레인 안의 인간/AI는 공통 startAt을 사용한다. 원격 프로토콜3·500ms 표시 여유·250ms 선택·90초 가안과 같은 방 참가자 교체는 그대로다.
+
+두 작업 합계 벽시계 시간 중앙값(초, 각3회; 전처리/후처리 포함, 네트워크·사진 준비 제외):
+
+|A 조건 + B 조건|serial|parallel|
+|---|---:|---:|
+|건물 + 건물|0.092|0.086|
+|건물 + 연못|0.122|0.106|
+|건물 + 사람|0.536|0.533|
+|건물 + 나무|2.366|1.368|
+|연못 + 건물|0.090|0.079|
+|연못 + 연못|0.107|0.078|
+|연못 + 사람|0.299|0.291|
+|연못 + 나무|2.301|2.234|
+|사람 + 건물|0.307|0.287|
+|사람 + 연못|0.291|0.302|
+|사람 + 사람|0.534|0.376|
+|사람 + 나무|2.641|2.175|
+|나무 + 건물|1.367|1.631|
+|나무 + 연못|2.198|1.565|
+|나무 + 사람|1.553|2.206|
+|나무 + 나무|3.504|2.948|
+
+나무+사람 등 일부 조합은 느려졌으며 시간은 입력 사진·GPU 상태에 의존한다. 이번 변경의 확정 결과는 A/B 독립 입장과 실제 동시 연산이다. 11/02 별도 후보 실험 및 11/01의 B10.438초 예약 전 대기는 이전 FIFO 이력으로 보존한다.
+
+### 현재 운영 엔진
+
+수정 적용을 위해 이전 운영 체인43132→17060→38628의 절대 경로/부모 관계를 다시 검사한 뒤 해당 체인만 종료했다. 토큰을 디스크/프로세스 메모리 덤프로 추출하지 않았다. GPU 검사 후 정규 실행기를 새 interactive 콘솔로 다시 켜 두었다. 새 체인은 **21536 → 43456 → 38212**이며 두 Python PID는 가상환경 실행 체인이다. 새 가동 기록 (로컬 산출물: `runs/parallel-operating-20261105/operator-start.json`), startup (로컬 산출물: `runs/remote-engine/20261105-155403-523db1f2/startup.json`).
+
+실제 startup: device=cuda, inference_mode=parallel, 동시 슬롯2, CUDA stream2, 가중치 한 세트 공유, 두 worker 합성 예열 완료. 모델 로드 6.703초 + 예열 2.781초 = 전체 9.484초다. 시작 후 경로/부모 관계·생존을 확인했고 계속 켜 둔다. 공개 서버는 기존 v13으로 두 방 병렬을 허용해 재배포/DB/사진/환경 변경이 필요하지 않았다.
+
+**사용자 재시험:** 재시작으로 메모리 토큰이 없어졌으므로 인간 A/B에서 새 방을 한 번씩 만들고 각 AI 표시 창에도 새 코드를 연결한다. 지금 켜 둔 한 콘솔에 `A 실제8자리코드`, `B 실제8자리코드`를 숨겨 입력한다. 에이전트는 사용자 방 코드를 입력하지 않았다. 두 인간 화면에서 함께 시작해 더 이상 앞 레인의 준비/경기 종료를 기다리지 않는지 확인한다. 이후 참가자 교체는 기존과 같이 같은 방에서 다음 참가자 준비를 사용한다. 추가 엔진을 켜지 않는다.
+
+재현(운영 엔진과 동시에 CUDA 검증기를 실행하지 않는다):
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -m unittest discover -s tests
+# 아래 검증은 엔진이 꺼져 있을 때 새 결과 경로로 실행한다.
+.\.venv\Scripts\python.exe -X utf8 runs/parallel-operating-20261105/verify_cuda.py --execute --profile --repetitions 3 --output runs/parallel-operating-20261105/cuda-recheck.json
+.\.venv\Scripts\python.exe -X utf8 runs/parallel-operating-20261105/verify_live.py --execute --output runs/parallel-operating-20261105/live-recheck
+.\.venv\Scripts\python.exe -X utf8 scripts/check_docs.py --date 2026-11-05
+.\.venv\Scripts\python.exe -X utf8 runs/site-publish/audit_docs.py --date 2026-11-05 --output runs/parallel-operating-20261105/document-audit.json
+```
+
+이번 작업 검토: 관리 Markdown13개 전체를 분담 재독하고 최신 parallel 정책·실제 CPU/CUDA/공개 두 방 결과·새 가동을 반영했다. 기존 FIFO 측정은 이력으로 보존한다. 가중치/임계값·사진·학교 미사용·40%/ONNX/Pi/legacy OS 입력 상태는 바꾸지 않았다. 남은 작업은 사용자 실제 외부 컴퓨터 A/B 재시험·연속 참가자/장시간 리허설과 기존 미완료 항목이다. 전체 문서 점검 결과는 아래 완료 기록과 CHANGELOG를 따른다.
+
+## 이전 작업: 외부 컴퓨터 시험용 FIFO PC 엔진 가동 (2026-11-05)
+
+이 절의 PID와 기동은 병렬 업데이트 전 이력이다. 현재 엔진은 최상단의 새 가동 기록을 따른다.
+
+사용자의 서버 기동/외부 컴퓨터 시험 요청으로 공개 사이트를 확인하고 정규 PC 엔진을 켜 두었다. 추가 창 문의에는 한 엔진이 A/B 모두 연결됨을 설명했고 사용자가 이를 이해하고 시험하러 간다고 답했다. 추가 GPU 엔진이나 브라우저 창은 열지 않았다. 외부 컴퓨터의 실제 시험 결과는 아직 받지 않았다.
+
+### 실제 확인
+
+- Sites 조회: project appgprj_6ade37995018819184a42c88bb0fde7c active/public, 최신 버전13. 기존 공개 사이트를 다시 배포하거나 환경/방/사진을 변경하지 않았다.
+- human.marulee.dev / bot.marulee.dev 각각 `/?lane=A`, `/?lane=B`, `/api/health` 6요청 모두 HTTP200. health protocol3·사진 준비 barrier=true·최소250ms를 확인했다. HTML/API 수신 검사이며 외부 기기의 브라우저 렌더링·사진 준비 완료 검사가 아니다. 응답 시간0.081~0.729초는 이 PC의 1회 관측으로 외부 네트워크 성능 보장이 아니다. HTTP 기록 (로컬 산출물: `runs/server-readiness-20261105/public-http-check.json`).
+- 시작 전 run_remote_engine.py 엔진0개를 확인하고 `scripts/start_remote_engine.ps1`을 새 코드 입력용 visible 콘솔에서 실행했다. 현재 체인은 **powershell43132 → venv Python17060 → base Python38628**이며 경로/부모 관계·생존을 재확인했다. 두 Python PID는 가상환경 실행 체인이고 독립 GPU 엔진 두 개가 아니다. 기존 프로세스를 종료하지 않았다.
+- 새 startup.json (로컬 산출물: `runs/remote-engine/20261105-153228-f21fc803/startup.json`): device=cuda, 3모델 한 번 로드15.046초·합성 RGB 예열3.657초·총18.703초, 실제 문제 사진0·가중치/임계값 변경0. 준비 완료 뒤 코드 입력을 받는 콘솔을 계속 켜 두었다. 현재 가동 기록 (로컬 산출물: `runs/server-readiness-20261105/operator-start.json`).
+- 에이전트의 방 코드 입력0·사용자 특정 방 연결/엔진 heartbeat/실제 문제 선택·제출 검증0. 사용자가 이후 입력한 방 연결이나 외부 시험 성공을 추정하지 않는다. 11/01 PID 및 이전 CUDA 경기 결과는 당시 이력이다.
+
+### 외부 컴퓨터 시험 순서
+
+| 역할 | 공개 주소 |
+|---|---|
+| 인간 A | https://human.marulee.dev/?lane=A |
+| AI 표시 A | https://bot.marulee.dev/?lane=A |
+| 인간 B | https://human.marulee.dev/?lane=B |
+| AI 표시 B | https://bot.marulee.dev/?lane=B |
+
+1. Chrome에서 각 역할 화면을 실제 보이는 창으로 연다. 외부 컴퓨터에는 Python/ML 설치가 필요 없다. 이 PC의 localhost5186이나 LAN 포트 연결을 사용하지 않는다.
+2. 인간 A/B 각각 새 remote 방을 만들고 코드를 같은 레인의 AI 표시 화면에 입력한다. 이 PC의 이미 켠 **한 콘솔**에 `A 실제8자리코드`, `B 실제8자리코드`를 각각 숨겨 입력한다. 코드/토큰을 인자·파일·로그로 전달하지 않는다.
+3. 각 인간 화면의 PC 준비/AI 표시 연결을 확인하고 시작한다. GPU 대기→세 역할9장 준비→약2초 공통 출발을 확인한다. 양 화면을 숨은 탭으로 두지 않는다. A/B의 절대 출발 시각은 다를 수 있다.
+4. 종료 뒤 같은 인간 화면에서 다음 참가자 준비→다시 시작한다. 정상 참가자 교체에는 새 방/코드/모델 재시작이 필요 없다. 시험 동안 PC 콘솔과 전원·네트워크를 유지한다.
+
+**완료:** 공개 접근·프로토콜 HTTP 확인, 정규 CUDA 엔진 기동/합성 예열·생존 및 유지. **남음:** 외부 컴퓨터의 실제 방 참가/사진 디코딩·A/B 동시 한 판/연속 참가자·네트워크/장시간 시험 결과. 모델 품질/40%·ONNX·Pi·legacy OS 입력은 그대로 미완료다. 이번에는 운영 코드/학습/사진/서버 배포/전역 네트워크 설정 변경과 새 실전 정확도 측정이 없다. 코드 변경이 없어 기존 전체 단위 테스트를 다시 실행하지 않았고 실제 기동·공개 HTTP로 확인했다.
+
+재현/문서 점검:
+
+```powershell
+# 이미 켜 둔 엔진은 중복 실행하지 않는다. 아래 실행기는 꺼져 있을 때만 쓴다.
+.\Start-Alpha-Remote.cmd
+.\.venv\Scripts\python.exe -X utf8 scripts/check_docs.py --date 2026-11-05
+.\.venv\Scripts\python.exe -X utf8 runs/site-publish/audit_docs.py --date 2026-11-05 --output runs/server-readiness-20261105/document-audit.json
+```
+
+이번 작업 검토: 관리13개 전체 본문을 분담 재독하고 현재 HTTP/새 startup·프로세스 체인·A/B 단일 엔진/외부 시험 흐름과 대조했다. 사용자 시험용 콘솔은 유지한다. `check_docs.py --date 2026-11-05`는13개 모두 통과했고 별도 전수 감사도 UTF-8/로컬 링크/전체 목록/설정JSON8개가 모두 통과했다. 결과는 `runs/server-readiness-20261105/document-audit.json`에 보존했다. 마무리 생존 조회에서도43132→17060→38628이 계속 실행 중임을 확인했다.
+
+## 이전 작업: GitHub public 저장소 생성·소스 푸시 (2026-11-04)
 
 사용자 요청으로 [ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI)를 `ProgrammingYJ` 계정에 **PUBLIC으로 생성하고 main에 초기 소스333파일을 푸시했다.** 첫 소스 커밋 `1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d`가 로컬 HEAD·git ls-remote·GitHub API에서 일치했다. GitHub 기본 브랜치 main·isEmpty=false·visibility=PUBLIC·tree truncated=false 및 333개 일반 파일(mode100644)/gitlink0을 확인했다. 이후 문서 결과 갱신도 같은 main에 동기화한다. 기존 Sites v13 게시·운영34사진·가중치·임계값·원격 엔진은 이번 작업에서 변경하지 않았다.
 

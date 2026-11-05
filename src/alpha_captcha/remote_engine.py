@@ -7,6 +7,7 @@ answers or filename-derived labels.
 
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from io import BytesIO
 import http.client
 import json
@@ -587,10 +588,12 @@ class EngineRoom:
 
 
 class GpuReservation:
-    def __init__(self, pool, acquired_at, wait_seconds, *, context_check_seconds=0.0, wall_wait_seconds=None):
+    def __init__(self, pool, acquired_at, wait_seconds, *, context_check_seconds=0.0, wall_wait_seconds=None,
+                 worker_index=0):
         self.pool, self.acquired_at, self.wait_seconds = pool, acquired_at, wait_seconds
         self.context_check_seconds = context_check_seconds
         self.wall_wait_seconds = wait_seconds if wall_wait_seconds is None else wall_wait_seconds
+        self.worker_index = worker_index
         self.thread_id, self.released = threading.get_ident(), False
 
     def validate(self, pool):
@@ -598,12 +601,7 @@ class GpuReservation:
             raise RemoteEngineError("reservation_required")
 
     def release(self):
-        with self.pool.condition:
-            if not self.released:
-                self.released = True
-                self.pool.lock.release()
-                self.pool.busy = False
-                self.pool.condition.notify_all()
+        self.pool.release(self)
 
 
 class FifoGpuReservations:
@@ -611,6 +609,15 @@ class FifoGpuReservations:
 
     def __init__(self, lock):
         self.lock, self.condition, self.pending, self.busy = lock, threading.Condition(), [], False
+        self.capacity = 1
+
+    def release(self, claim):
+        with self.condition:
+            if not claim.released:
+                claim.released = True
+                self.lock.release()
+                self.busy = False
+                self.condition.notify_all()
 
     def acquire(self, *, active=lambda: True, clock=time.monotonic):
         ticket, queued_at, native_acquired, context_seconds = object(), clock(), False, 0.0
@@ -643,13 +650,142 @@ class FifoGpuReservations:
                     self.condition.notify_all()
 
 
-class SharedModels:
-    """Three frozen models loaded once; inference is serialized across lanes."""
+class ParallelGpuReservations:
+    """Two independent prestart/inference slots, without a lane-wide FIFO gate."""
 
-    def __init__(self, predictor, tree_predictor, *, lock=None):
+    def __init__(self, capacity=2):
+        if type(capacity) is not int or capacity < 1:
+            raise ValueError("worker capacity must be a positive integer")
+        self.capacity = capacity
+        self.condition, self.pending = threading.Condition(), []
+        self._free_workers, self._claims = list(range(capacity)), {}
+
+    @property
+    def busy(self):
+        with self.condition:
+            return bool(self._claims)
+
+    def acquire(self, *, active=lambda: True, clock=time.monotonic):
+        ticket, queued_at, acquired, context_seconds = object(), clock(), False, 0.0
+        with self.condition:
+            self.pending.append(ticket)
+        try:
+            while True:
+                check_started = clock()
+                valid = active()
+                context_seconds += clock() - check_started
+                if not valid:
+                    raise RemoteEngineError("start_cancelled")
+                with self.condition:
+                    # A slow context HTTP check in the other lane must not
+                    # hold up a free slot, its image preparation or countdown.
+                    if self._free_workers:
+                        worker_index = self._free_workers.pop(0)
+                        acquired_at = clock()
+                        self.pending.remove(ticket)
+                        wall_wait = acquired_at - queued_at
+                        claim = GpuReservation(self, acquired_at, wall_wait, worker_index=worker_index,
+                                               context_check_seconds=context_seconds,
+                                               wall_wait_seconds=wall_wait)
+                        self._claims[worker_index] = claim
+                        acquired = True
+                        return claim
+                    self.condition.wait(timeout=0.1)
+        finally:
+            if not acquired:
+                with self.condition:
+                    if ticket in self.pending:
+                        self.pending.remove(ticket)
+                    self.condition.notify_all()
+
+    def release(self, claim):
+        with self.condition:
+            if claim.released:
+                return
+            if self._claims.get(claim.worker_index) is not claim:
+                raise RemoteEngineError("reservation_required")
+            del self._claims[claim.worker_index]
+            claim.released = True
+            self._free_workers.append(claim.worker_index)
+            self._free_workers.sort()
+            self.condition.notify_all()
+
+
+@dataclass
+class InferenceWorker:
+    predictor: object
+    tree_predictor: object
+    stream: object = None
+
+
+class SharedModels:
+    """Frozen weights loaded once, with isolated concurrent inference workers.
+
+    Parallel is the operator default. Each reservation owns one worker through
+    image readiness, countdown and inference, so neither lane waits for the
+    other's prestart path. CUDA workers have distinct streams; this requests
+    concurrent execution, not a fixed GPU percentage or a latency guarantee.
+    """
+
+    def __init__(self, predictor, tree_predictor, *, lock=None, execution_mode="parallel"):
+        if execution_mode not in {"parallel", "serial"}:
+            raise ValueError("inference mode must be parallel or serial")
         self.predictor, self.tree_predictor = predictor, tree_predictor
+        self.execution_mode = execution_mode
         self.lock = lock or threading.Lock()
-        self.reservations = FifoGpuReservations(self.lock)
+        self.reservations = (ParallelGpuReservations() if execution_mode == "parallel"
+                             else FifoGpuReservations(self.lock))
+        self._torch, self._cuda_device = None, None
+        devices = {str(device) for model in (predictor, tree_predictor)
+                   if (device := getattr(model, "device", None)) is not None}
+        cuda_devices = {device for device in devices if device.startswith("cuda")}
+        if cuda_devices:
+            if len(cuda_devices) != 1 or len(devices) != 1:
+                raise ValueError("all shared models must use the same CUDA device")
+            self._cuda_device = next(iter(cuda_devices))
+        if devices:
+            import torch
+            self._torch = torch
+        self.workers = []
+        for _ in range(self.reservations.capacity):
+            # The real predictors expose this fork to keep processor/tokenizer
+            # and diagnostic state private while referencing the same weights.
+            # Lightweight injected test predictors need no ML dependency.
+            predictor_fork = getattr(predictor, "fork_for_inference", None)
+            tree_fork = getattr(tree_predictor, "fork_for_inference", None)
+            worker = InferenceWorker(
+                predictor_fork() if predictor_fork is not None else predictor,
+                tree_fork() if tree_fork is not None else tree_predictor)
+            if self._cuda_device is not None:
+                torch = self._torch
+                with torch.cuda.device(self._cuda_device):
+                    worker.stream = torch.cuda.Stream(device=self._cuda_device)
+                    worker.stream.wait_stream(torch.cuda.current_stream(self._cuda_device))
+            self.workers.append(worker)
+
+    def execution_metadata(self):
+        return {"inference_mode": self.execution_mode,
+                "max_concurrent_inferences": self.reservations.capacity,
+                "cuda_stream_count": sum(worker.stream is not None for worker in self.workers),
+                "model_weights_shared": True,
+                "gpu_percentage_partitioned": False}
+
+    @contextmanager
+    def _worker_execution(self, worker):
+        if self._torch is None:
+            yield
+            return
+        with self._torch.inference_mode():
+            if worker.stream is None:
+                yield
+            else:
+                with self._torch.cuda.device(self._cuda_device), self._torch.cuda.stream(worker.stream):
+                    try:
+                        yield
+                    finally:
+                        # Complete this stream, not all CUDA work from both
+                        # lanes, before publishing results/reusing its buffers.
+                        worker.stream.synchronize()
 
     def reserve(self, *, active=lambda: True, clock=time.monotonic):
         return self.reservations.acquire(active=active, clock=clock)
@@ -662,15 +798,24 @@ class SharedModels:
         """
         started = clock()
         images = [Image.new("RGB", (192, 192), (127, 127, 127)) for _ in range(9)]
+        claims = []
         try:
-            self.infer(images, {"task_type": "building_present"})
-            self.infer(images, {"task_type": "person_count", "operator": "gte", "n": 3})
-            self.infer(images, {"task_type": "tree_count", "operator": "gte", "n": 3})
+            # Hold each slot once so both streams/processors are initialized;
+            # sequential acquisitions otherwise repeatedly choose worker zero.
+            for _ in self.workers:
+                claims.append(self.reserve())
+            for claim in claims:
+                self.infer(images, {"task_type": "building_present"}, reservation=claim)
+                self.infer(images, {"task_type": "person_count", "operator": "gte", "n": 3}, reservation=claim)
+                self.infer(images, {"task_type": "tree_count", "operator": "gte", "n": 3}, reservation=claim)
         finally:
+            for claim in claims:
+                claim.release()
             for image in images:
                 image.close()
         return {"seconds": clock() - started, "synthetic_rgb_only": True,
-                "model_families": ["presence", "person", "tree"], "challenge_images_used": 0}
+                "model_families": ["presence", "person", "tree"], "challenge_images_used": 0,
+                "workers_warmed": len(self.workers), **self.execution_metadata()}
 
     def infer(self, images, condition, *, active=lambda: True, timings=None, clock=time.monotonic,
               reservation=None):
@@ -685,6 +830,7 @@ class SharedModels:
                 raise RemoteEngineError("round_ended") from None
             raise
         claim.validate(self.reservations)
+        worker = self.workers[claim.worker_index]
         try:
             if not active():
                 raise RemoteEngineError("round_ended")
@@ -692,18 +838,21 @@ class SharedModels:
             if timings is not None:
                 timings["gpu_queue_seconds"] = claim.wait_seconds if owned else 0.0
                 timings["timing_schema_version"] = 2
+                timings.update(self.execution_metadata(), inference_worker_index=claim.worker_index)
+            with self._worker_execution(worker):
+                if isinstance(parsed, dict):
+                    decisions = worker.tree_predictor.predict_at_least_three(images)
+                else:
+                    targeted = getattr(worker.predictor, "predict_condition_tiles", None)
+                    rows = targeted(images, parsed) if targeted is not None else worker.predictor.predict_tiles(images)
+            model_returned = clock()
             if isinstance(parsed, dict):
-                decisions = self.tree_predictor.predict_at_least_three(images)
-                model_returned = clock()
                 if len(decisions) != 9 or any(type(value) is not bool for value in decisions):
                     raise ValueError("tree model returned invalid decisions")
                 selected = [index for index, value in enumerate(decisions) if value]
                 predictions = [{"at_least_three": value} for value in decisions]
             else:
-                targeted = getattr(self.predictor, "predict_condition_tiles", None)
-                rows = targeted(images, parsed) if targeted is not None else self.predictor.predict_tiles(images)
-                model_returned = clock()
-                threshold = self.predictor.presence_metadata["profile"]["threshold"]
+                threshold = worker.predictor.presence_metadata["profile"]["threshold"]
                 selected = select_tiles(rows, parsed, {name: threshold for name in ("tree", "building", "pond")})
                 predictions = [{"presence_scores": dict(row.presence_scores), "person_count": row.person_count}
                                for row in rows]
@@ -842,6 +991,8 @@ def run_one_room(room, models, *, cancel=None, clock=time.monotonic, sleep=time.
         "image_barrier_used": False, "prestart_image_download_seconds": 0.0,
         "public_image_download_during_game_seconds": 0.0, "image_cache_reused": False,
         "image_ready_ack_count": 0, "prestart_inference_count": 0}
+    if isinstance(models, SharedModels):
+        report.update(models.execution_metadata())
     reservation, state_http_seconds = None, 0.0
     images, image_cache_key, acknowledged_epoch, barrier_context = None, None, None, None
     def view():
@@ -899,6 +1050,7 @@ def run_one_room(room, models, *, cancel=None, clock=time.monotonic, sleep=time.
                             and current.start_request is not None and current.start_request["id"] == ticket)
                 reservation = models.reserve(active=queue_active, clock=clock)
                 report.update(gpu_reserved_before_start=True,
+                              inference_worker_index=reservation.worker_index,
                               gpu_reserved_monotonic_seconds=reservation.acquired_at,
                               prestart_gpu_queue_seconds=reservation.wait_seconds,
                               prestart_queue_wall_seconds=reservation.wall_wait_seconds,
@@ -1195,7 +1347,7 @@ class LaneCancellation:
 
 
 class EngineController:
-    """One active participant per lane, with independent workers and one GPU queue."""
+    """One active participant per lane with the configured shared-model slots."""
 
     def __init__(self, models, room_factory, output, *, wait_seconds=1800.0, progress=lambda *_: None,
                  runner=run_one_room, diagnostic=lambda *_: None, continuous=False):
@@ -1209,6 +1361,8 @@ class EngineController:
         self._workers, self._lane_cancel, self._counts, self.reports = {}, {}, {"A": 0, "B": 0}, []
 
     def _persist(self, lane, report):
+        if isinstance(self.models, SharedModels):
+            report.update(self.models.execution_metadata())
         with self._lock:
             self._counts[lane] += 1
             number = self._counts[lane]
