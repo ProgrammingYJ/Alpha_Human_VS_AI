@@ -259,6 +259,29 @@ class RemoteProtocolTests(unittest.TestCase):
         self.assertNotIn(TOKEN, str(caught.exception))
         self.assertNotIn(CODE, str(caught.exception))
 
+    def test_session_reset_HTTP_errors_preserve_bounded_code_status_without_echoing_server_credentials(self):
+        raw_message = "untrusted server text with " + TOKEN + " and " + CODE
+        for expected_code, status in (("room_reset", 410), ("session_reset_unavailable", 503)):
+            with self.subTest(code=expected_code):
+                class ErrorOpener:
+                    def open(self, request, timeout):
+                        raise HTTPError("https://PRIVATE-ERROR-URL", status, raw_message, {}, BytesIO(
+                            json.dumps({"code": expected_code, "error": raw_message, "token": TOKEN}).encode()))
+                transport = remote.ControlledTransport("http://localhost", opener_factory=ErrorOpener)
+                with self.assertRaises(remote.RemoteEngineError) as caught:
+                    transport.json("/api/rooms/" + ROOM, token=TOKEN)
+                failure = caught.exception
+                self.assertEqual((failure.code, failure.status), (expected_code, status))
+                self.assertEqual(str(failure), expected_code)
+                diagnostic = remote.safe_diagnostic(failure.code)
+                self.assertLess(len(diagnostic), 200)
+                self.assertNotEqual(diagnostic, remote.safe_diagnostic("unknown_fixture"))
+                public_report = json.dumps({"code": failure.code, "status": failure.status,
+                                            "error": str(failure), "diagnostic": diagnostic}, ensure_ascii=False)
+                for private in (TOKEN, CODE, raw_message, "PRIVATE-ERROR-URL"):
+                    self.assertNotIn(private, public_report)
+                    self.assertNotIn(private, repr(failure))
+
     def test_projection_refuses_wrong_lane_and_truth_bearing_condition_and_only_retains_public_model_inputs(self):
         current = snapshot()
         self.assertEqual(set(vars(current)), {"phase", "round_id", "condition", "photo_paths", "lane", "round_number", "start_request", "start_at", "cancellation_reason", "gpu_reservation_supported", "selection_plan_supported", "bot_attempted", "image_barrier_supported", "image_load_id"})

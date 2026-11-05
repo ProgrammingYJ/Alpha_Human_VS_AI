@@ -2,6 +2,18 @@
 
 최종 검토: 2026-11-05 (Asia/Pyongyang)
 
+## 운영 연결 init·옛 세션 철회 (2026-11-05)
+
+사용자의 ‘이미 연결된 봇’/전체 init 요청에 버전14·환경revision6을 게시했다. PC를 다시 켜도 D1의 최초 bot/engine 해시는 남으므로, 서버 환경 `ARENA_SESSION_RESET_BEFORE_MS=1793862306432`를 기준으로 그 시각 이하에 생성한 모든 방을410 `room_reset`으로 논리적으로 철회한다. 코드 참가·인간/표시/엔진 조회/행동과 공개 현재 사진 읽기에도 같은 보호를 적용한다. 기존 ADMIN_KEY/ADMIN_OWNER_ID·도메인·방/과거 결과·활성34사진/라벨·R2·모델은 보존하며 migration/데이터 삭제는 없다. 이후 배포에도 경계를 유지하고 init할 때만 증가시킨다. 제거/감소하면 옛 권한이 다시 유효해질 수 있다. 잘못된/미래 설정은503 `session_reset_unavailable`다.
+
+현재 연결의 초기화/만료410은 해당 sessionStorage와 메모리·사진/선택/시계를 비우고 시작 화면으로 복구한다. 연결 세대/roomId/storageKey로 옛 요청이 새 연결을 덮지 못한다. 수동 복구는 각 화면의 `?lane=A|B&reset=1`이며 현재 origin/탭의 remote 인간/봇 A/B 네 키를 값 열람 없이 비우고 reset/fragment를 URL에서 제거한다. 다른 호스트/탭도 각각 열어야 하며 이 URL 자체는 서버 전역 철회 명령이 아니다.
+
+공개 QA의 이전 A/B 세 역할GET·옛 코드 참가8개는 모두410이고 새 A/B 생성·표시 참가·엔진 heartbeat/ready·사진 없는 lobby는 통과했다. 두 호스트 HTML/health/각17개 자산200·`sessionResetSupported=true`도 확인했다. IAB 인간A/봇A의 reset주소에서 새 방 만들기/빈 코드·타이머0과 reset쿼리 제거를 확인했지만, 실제 옛 토큰을 보유한 브라우저의410 자동 복구나 사용자 외부 PC 저장소 삭제를 실측한 검사는 아니다. Node118·TypeScript·production build/diff와 Python194개 검사는 상위 [STATUS](../../docs/STATUS.md)를 따른다.
+
+복구는 각 [인간 A](https://human.marulee.dev/?lane=A&reset=1)·[봇 A](https://bot.marulee.dev/?lane=A&reset=1)·[인간 B](https://human.marulee.dev/?lane=B&reset=1)·[봇 B](https://bot.marulee.dev/?lane=B&reset=1)를 연 뒤 새 인간 A/B 방의 코드를 해당 표시와 PC 한 콘솔에 최초 연결하는 순서다. 이후 정상 참가자는 같은 방 next를 사용한다. 새 정규 PC 체인41224→42632→41396의 CUDAparallel2슬롯/2stream·두 worker 예열과 생존을 확인해 켜 두었으며 사용자 코드 입력은 하지 않았다. 현재 생존 정본은 STATUS와 `runs/session-reset-20261105/operator-start.json`이다.
+
+이번 작업 검토: 운영 init — 2026-11-05 전체 웹 안내/계약과 과거 이력을 재독하고 실제 v14·철회/신규 연결·화면 reset 관측과 미확인 외부 기기/자동410 복구를 구분했다. protocol3·500ms/250ms·parallel2슬롯/2stream·고정 모델/사진·학교/학습 정책은 유지한다. 전체13개 문서 점검과 배포/가동·남은 실제 행사 검증은 상위 STATUS/CHANGELOG가 정본이다.
+
 ## PC A/B 병렬 엔진과 웹 계약 (2026-11-05)
 
 사용자의 A/B 실제 병렬 추론 요청으로 이전 단일 FIFO 운영 기본값을 대체했다. 원격 실행기 하나가 존재·사람·나무 가중치 한 벌을 공유하며 `SharedModels(..., execution_mode="parallel")`의 독립 작업 슬롯2개와 CUDA stream2개를 사용한다. A/B는 각자 슬롯을 확보해 사진 준비·카운트다운·출발 뒤 추론을 진행하므로 한 레인이 다른 레인의 준비/추론 완료를 기다리는 단일 큐를 사용하지 않는다. 각 방의 인간/AI 공통 출발은 유지하며 서로 다른 방의 절대 출발 시각을 강제로 맞추지 않는다.

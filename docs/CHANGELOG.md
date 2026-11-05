@@ -2,6 +2,35 @@
 
 최종 검토: 2026-11-05 (Asia/Pyongyang)
 
+## 2026-11-05 운영 연결 init·중복 봇 연결 복구
+
+- 사용자가 PC 재시작 뒤 ‘이미 연결된 봇’과 전체 init을 요청했다. PC 메모리 토큰 소실과 D1의 잔존 bot/engine 해시를 구분하고, 서버 환경 `ARENA_SESSION_RESET_BEFORE_MS`의 생성시각 경계로 옛 방의 모든 역할 조회/참가/행동·공개 현재 사진을410 `room_reset`으로 철회하는 보호를 추가했다. 잘못된/미래 설정은503으로 중단한다.
+- 기존 방/라운드·과거 결과·R2/활성34사진·라벨/그룹·모델을 삭제하지 않으며 관리자 비밀값을 새로 읽거나 회전하지 않는다. 경계는 비밀정보가 아닌 운영 설정이고 후속 배포에도 보존한다. 새 방에서 최초 연결한 뒤 정상 참가자는 계속 같은 방 next를 사용한다.
+- UI는 현재 연결의 초기화/만료410에서 해당 저장소/선택/사진/시계를 비우고 시작 화면으로 복구한다. 연결 세대/roomId/storageKey로 늦은 옛 응답이 새 연결을 덮지 못하며 `?reset=1`은 열린 origin/탭의 remote 네 키를 값 열람 없이 제거한다. reset/fragment를 URL에서 제거하고 다른 호스트/탭은 각각 열도록 안내한다.
+- 서버/UI Node118개·TypeScript·production build/diff, 전체 Python194개15.522초(reset410/503 진단회귀1개 추가)를 통과했다. 첫 공개 QA 도우미 stdin EOF·v2 수동 중단/오류 파싱은 검증 준비 미완료 이력으로 보존하고 제품 성공/실패와 구분했다. 새 public-reset-verification-v3.json은 이전A/B human/viewer/engineGET6개+옛코드join2개 총8개410 room_reset·새A/B 생성/viewer참가/engineheartbeatready/사진없는lobby 모두통과다. 코드/토큰은RAM전용이며보관하지않았다.
+- Sites v14·환경revision6 게시 succeeded. 서버시각기준 cutoff1793862306432, source28d18857722ee6cbc2e93ad86c43621a5cfb449b, saved appgprj_6ade37995018819184a42c88bb0fde7c~appgver_03faf9e180ac81919e7e912f4780cda0, deployment appgdep_6aec2b03d760819191da6af1b79b0701. 기존public주소/ADMIN_KEY/OWNER변경0이며 runs/session-reset-20261105/release.json에기록했다. 적용경계는후속배포에도유지하고init때증가만하며감소/삭제로옛토큰재허용하지않는다.
+- 두호스트HTML/health/각17자산200·sessionResetSupported=true를 확인했다. IAB humanA/botA reset주소의초기화면(새방만들기/빈코드·타이머0)과queryreset제거를확인했다. 옛세션보유브라우저410자동복구실측이나사용자외부PC저장소삭제와는구분한다. 화면도구의작업종료기록을남겼으며사용자의운영방코드입력0이다.
+- 이전operator21536→43456→38212의경로/부모관계확인후해당체인만정지하고새41224→42632→41396을켜두었다. CUDAparallel2slot/2stream/2workerwarm의load6.500초+warm3.672초=10.172초와생존을확인했다. 새정본은 runs/session-reset-20261105/operator-start.json 및 runs/remote-engine/20261105-160822-58d04071/startup.json이다. Windows OS재부팅·특정사용자방준비완료는주장하지않는다.
+- 기본parallel2슬롯/2CUDA스트림·공유 가중치·protocol3·500ms/250ms·같은 방 다음 참가자와 RGB 전용 ML·학교 미사용/학습량·가중치/임계값·사진 정책은 유지한다. Windows 자체 재부팅이나 새 ML/정확도 측정으로 보고하지 않는다. 남은 검증은 사용자 외부 A/B 최초 재연결/한 판·연속 운영과 기존40%/ONNX/Pi/legacy OS 입력·현장 리허설이다.
+
+### 이번에 읽고 갱신한 전체 Markdown (13개)
+
+- AGENTS.md
+- README.md
+- docs/README.md
+- docs/SETUP.md
+- docs/ARCHITECTURE.md
+- docs/DATASET.md
+- docs/DATASET_CANDIDATES.md
+- docs/EXECUTION_PLAN.md
+- docs/INTEGRATION.md
+- docs/ROADMAP.md
+- docs/STATUS.md
+- docs/CHANGELOG.md
+- web/alpha-arena/README.md
+
+이번 작업 검토: 운영 init — 위13개 전체 본문/이력을 재독·갱신하고 연결 철회·브라우저/PC 복구·실물 자료 보존과 대조했다. 새 Markdown은 없으며 변경 없는 데이터/모델 문서에도 검토 결과를 기록했다. 실제 v14/환경6·이전권한8개410/새A/B연결·코드검사·IAB초기화면·새운영가동과남은사용자최초재연결/실제기기검증을구분한다. `check_docs.py --date 2026-11-05`의13개와 별도UTF-8/로컬링크/전체목록/설정JSON8개감사가 모두통과했다. 정본은 runs/session-reset-20261105/document-audit-agent.json이며 기계검사를 본문 직접검토와 구분한다.
+
 ## 2026-11-05 A/B 실제 병렬 추론과 운영 엔진 업데이트
 
 - 사용자의 FIFO 시험 제보/병렬 요청을 반영해 기본 SharedModels를 독립2슬롯·공유weights·worker별processor/진단·CUDA2stream으로 바꿨다. 준비/카운트다운도 함께 진행하고 자기 stream만 동기화한다. CLI/PS 기본 parallel, explicit serial 복구 및 startup/round 모드 메타데이터를 추가했다.

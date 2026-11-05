@@ -2,6 +2,16 @@
 
 최종 검토: 2026-11-05 (Asia/Pyongyang)
 
+## 운영 연결 초기화 후 다시 연결하기 (2026-11-05)
+
+‘이미 연결된 봇’은 PC만 다시 켜도 기존 방의 서버 연결 기록이 남아 발생할 수 있습니다. 이번 운영 init은 정해진 시각 이전 방의 권한을410 `room_reset`으로 철회하고 새 방부터 받는 방식입니다. 사진34장·모델·과거 경기 기록은 삭제하지 않습니다. 실제 적용 시각·게시 버전·새 PC 엔진 생존은 [STATUS](docs/STATUS.md)를 따릅니다.
+
+초기화 후에는 각 화면에서 [인간 A](https://human.marulee.dev/?lane=A&reset=1)·[봇 A](https://bot.marulee.dev/?lane=A&reset=1)·[인간 B](https://human.marulee.dev/?lane=B&reset=1)·[봇 B](https://bot.marulee.dev/?lane=B&reset=1)를 엽니다. 인간 A/B에서 새 방을 만들고 새 코드를 같은 레인의 봇 표시 화면과 켜 둔 PC 콘솔에 한 번씩 연결합니다. PC 실행기는 하나만 사용합니다. 이전 방 코드는 다시 사용하지 않으며 이후 정상 참가자 교체는 같은 방의 **다음 참가자 준비**를 유지합니다.
+
+`reset=1`은 해당 브라우저 origin/탭의 remote 역할4개 저장소를 비우고 주소에서 제거됩니다. 서버의 전역 init을 실행하는 주소가 아니므로 다른 화면도 각각 엽니다. 새 UI는 현재 방의 초기화/만료410을 받으면 저장소와 화면을 비우고 시작 화면으로 돌아갑니다. 늦은 이전 요청은 새 방을 지우지 않습니다.
+
+이번 작업 검토: 운영 init — 2026-11-05 전체 본문과 이력을 재독하고 서버 연결 기록·브라우저/PC 메모리 초기화와 새 방 최초 연결을 구분했다. 병렬2슬롯/2스트림·protocol3·250ms/500ms·사진/모델/학교 정책은 유지하며 실제 적용/검사·가동은 STATUS/CHANGELOG가 정본이다.
+
 공개 소스 저장소: [ProgrammingYJ/Alpha_Human_VS_AI](https://github.com/ProgrammingYJ/Alpha_Human_VS_AI) — **PUBLIC·main 브랜치에 Python/웹 소스 푸시 완료**. 최초 소스 커밋은 `1bd9efbdc15ad9b36cdea129d7cbdaa55e3ab30d`이며 원격 대조·공개 범위·검사는 [STATUS](docs/STATUS.md)에 기록합니다.
 
 공개본에는 Python ML/원격 엔진·웹 서버/화면·설정 예시·테스트·문서와 검토된 실험/관리 도구 소스를 담습니다. 실제 가중치·Kaggle/학교/운영 사진·정답은행·JSON 실행 결과·비밀 환경·가상환경·의존성 설치본은 제외합니다. 운영 정답표를 코드에 담은 검토 빌더 2개도 제외합니다. `runs/`에서는 비밀감사를 통과한 `.py/.mjs/.ps1/.cmd/.sh`만 예외로 포함합니다. 기존 Sites Git 기록은 공개하지 않고 웹 소스는 일반 파일로 포함합니다.

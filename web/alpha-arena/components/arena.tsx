@@ -5,6 +5,7 @@ import Link from "next/link";
 import { acceptsRoomState, publicRoundView, remoteDisplayIndices, roomPollIntervalMs, sameActionContext } from "./arena-state.mjs";
 import { engineStatus } from "./engine-status.mjs";
 import { clockSample } from "./server-clock.mjs";
+import { clearRemoteSessions, currentSessionRequest, resetSessionFailure, sessionKey } from "./arena-session.mjs";
 import { ArrowRight, Bot, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, Copy, Flag, Image as ImageIcon, Link2, LoaderCircle, LockKeyhole, Radio, ShieldCheck, Sparkles, Timer, Trophy, UserRound, UsersRound, X } from "lucide-react";
 
 type Role = "human" | "bot";
@@ -42,9 +43,7 @@ function roomFrom(data: RoomResponse): RoomState {
   return "state" in data ? data.state : data;
 }
 
-function sessionKey(role: Role, mode: Mode, lane: Lane) {
-  return mode === "remote" ? `alpha-arena-${role}-remote-${lane}` : `alpha-arena-${role}`;
-}
+type SessionRequest = { generation: number; roomId: string | null; storageKey: string };
 
 class ApiFailure extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
@@ -101,6 +100,29 @@ export default function Arena() {
   const imageMount = useRef<string | null>(null);
   const imageAck = useRef<string | null>(null);
   const [registeredImageRound, setRegisteredImageRound] = useState<string | null>(null);
+  const sessionGeneration = useRef(0);
+  const busyRequest = useRef<symbol | null>(null);
+
+  const requestContext = useCallback((): SessionRequest => ({ generation: sessionGeneration.current,
+    roomId: activeRoom.current, storageKey: storageKey.current }), []);
+  const requestIsCurrent = useCallback((request: SessionRequest) => currentSessionRequest(request, requestContext()), [requestContext]);
+  const resetSession = useCallback((message = "") => {
+    sessionGeneration.current += 1;
+    activeRoom.current = null; acceptedState.current = null; roundRef.current = null;
+    clockEstimate.current = null; imageMount.current = null; imageAck.current = null; hiddenResetRound.current = null;
+    busyRequest.current = null;
+    try { sessionStorage.removeItem(storageKey.current); } catch { /* Keep the in-memory session cleared when storage is unavailable. */ }
+    setSession(null); setState(null); setSelected(new Set()); setLoaded(new Set()); setImageError(false);
+    setRegisteredImageRound(null); setClockOffset(0); setNow(performance.now()); setConnected(false);
+    setBusy(""); setFeedback(""); setCode(""); setCopied(false); setError(message);
+  }, []);
+  const recoverSession = useCallback((failure: unknown, request: SessionRequest) => {
+    if (!resetSessionFailure(failure, request, requestContext())) return false;
+    resetSession(failure instanceof ApiFailure && failure.code === "room_reset"
+      ? "운영 준비가 초기화됐어요. 새 대결방을 만들거나 새 연결 코드를 입력해 주세요."
+      : "대기실이 만료됐어요. 새 대결방을 만들거나 새 연결 코드를 입력해 주세요.");
+    return true;
+  }, [requestContext, resetSession]);
 
   const receive = useCallback((next: RoomState, before: number, after: number) => {
     if (!next || next.roomId !== activeRoom.current || !acceptsRoomState(acceptedState.current, next)) return false;
@@ -124,9 +146,10 @@ export default function Arena() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const explicitReset = params.get("reset") === "1";
     const detected: Role = params.get("role") === "bot" || window.location.hostname.startsWith("bot.") ? "bot" : "human";
     const fragment = new URLSearchParams(window.location.hash.slice(1));
-    const roomId = fragment.get("room"); const token = fragment.get("token");
+    const roomId = explicitReset ? null : fragment.get("room"); const token = explicitReset ? null : fragment.get("token");
     const detectedMode: Mode = params.get("mode") === "legacy" || (roomId && token && params.get("mode") !== "remote") ? "legacy" : "remote";
     let savedLane: string | null = null;
     try { savedLane = localStorage.getItem(`alpha-arena-lane-${detected}`); } catch { /* The URL still identifies the pad when storage is unavailable. */ }
@@ -134,12 +157,17 @@ export default function Arena() {
     const detectedLane: Lane = requestedLane === "A" || requestedLane === "B" ? requestedLane : savedLane === "B" ? "B" : "A";
     activeLane.current = detectedLane;
     storageKey.current = sessionKey(detected, detectedMode, detectedLane);
+    if (explicitReset) {
+      try { clearRemoteSessions(sessionStorage); } catch { /* Reset memory even if browser storage is unavailable. */ }
+      resetSession();
+      params.delete("reset");
+    }
     let restored: Session | null = null;
-    if (roomId && token) {
+    if (!explicitReset && roomId && token) {
       const next = { roomId, token, code: "" };
       sessionStorage.setItem(storageKey.current, JSON.stringify(next));
       restored = next;
-    } else {
+    } else if (!explicitReset) {
       try {
         const stored = sessionStorage.getItem(storageKey.current);
         const parsed: Session | null = stored ? JSON.parse(stored) : null;
@@ -155,7 +183,7 @@ export default function Arena() {
     const initialize = window.setTimeout(() => { activeRoom.current = restored?.roomId || null; setRole(detected); setMode(detectedMode); setLane(detectedLane); setSession(restored); setNow(performance.now()); }, 0);
     const ticker = window.setInterval(() => setNow(performance.now()), 50);
     return () => { window.clearTimeout(initialize); window.clearInterval(ticker); document.removeEventListener("visibilitychange", visibility); };
-  }, []);
+  }, [resetSession]);
 
   useEffect(() => {
     document.title = role === "bot" ? `ALPHA BOT | CAPTCHA · ${lane} 구역` : `ALPHA ARENA · 인간 vs AI · ${lane} 구역`;
@@ -165,6 +193,7 @@ export default function Arena() {
 
   useEffect(() => {
     if (!session) return;
+    const request = requestContext();
     let stopped = false;
     let inFlight = false;
     const poll = async () => {
@@ -172,8 +201,9 @@ export default function Arena() {
       inFlight = true;
       try {
         const result = await api<RoomResponse>(`/api/rooms/${encodeURIComponent(session.roomId)}`, session.token);
-        if (!stopped) receive(roomFrom(result.data), result.before, result.after);
+        if (!stopped && requestIsCurrent(request)) receive(roomFrom(result.data), result.before, result.after);
       } catch (failure) {
+        if (stopped || !requestIsCurrent(request) || recoverSession(failure, request)) return;
         const changed = failure instanceof ApiFailure && failure.status === 409
           && ["room_changed", "round_changed", "engine_state_changed", "start_request_changed", "image_load_changed"].includes(failure.code ?? "");
         if (!changed && !stopped && activeRoom.current === session.roomId) { setConnected(false); setError(failure instanceof Error ? failure.message : "서버 연결을 확인해 주세요."); }
@@ -183,21 +213,22 @@ export default function Arena() {
     void poll();
     const interval = window.setInterval(poll, pollIntervalMs);
     return () => { stopped = true; window.clearInterval(interval); };
-  }, [session, receive, pollIntervalMs]);
+  }, [session, receive, pollIntervalMs, requestContext, requestIsCurrent, recoverSession]);
 
   // Legacy rounds still need the question at start. Prepared remote rounds
   // reveal the existing pixels/prompt on the local common clock without HTTP.
   useEffect(() => {
     if (!session || state?.phase !== "countdown" || !state.startAt || state.imageLoad) return;
+    const request = requestContext();
     let stopped = false;
     const open = window.setTimeout(async () => {
       try {
         const result = await api<RoomResponse>(`/api/rooms/${encodeURIComponent(session.roomId)}`, session.token);
-        if (!stopped) receive(roomFrom(result.data), result.before, result.after);
-      } catch { /* The regular polling loop reports and retries connection errors. */ }
+        if (!stopped && requestIsCurrent(request)) receive(roomFrom(result.data), result.before, result.after);
+      } catch (failure) { if (!stopped) recoverSession(failure, request); }
     }, Math.max(0, state.startAt - performance.now() - clockOffset + 10));
     return () => { stopped = true; window.clearTimeout(open); };
-  }, [session, state?.phase, state?.startAt, state?.imageLoad, clockOffset, receive]);
+  }, [session, state?.phase, state?.startAt, state?.imageLoad, clockOffset, receive, requestContext, requestIsCurrent, recoverSession]);
 
   const saveSession = (next: Session, nextState: RoomState, before: number, after: number) => {
     if (nextState.remote && nextState.remote.lane !== lane) throw new Error(`${lane} 구역 코드가 아닙니다. 인간 화면의 구역과 코드를 확인해 주세요.`);
@@ -205,6 +236,7 @@ export default function Arena() {
     setMode(nextMode);
     activeLane.current = lane;
     storageKey.current = sessionKey(role, nextMode, lane);
+    sessionGeneration.current += 1;
     activeRoom.current = next.roomId;
     acceptedState.current = null;
     clockEstimate.current = null;
@@ -214,42 +246,42 @@ export default function Arena() {
   };
 
   const act = async (action: string) => {
-    if (busy) return;
+    if (busyRequest.current) return;
     if (role === "bot" && state?.remote && (action === "ready" || action === "submit" || action === "next" || action === "cancel-start" || action === "start")) return;
     if (action === "next" && (role !== "human" || !state?.remote || state.phase !== "result" || !state.roundId)) return;
     if (action === "cancel-start" && (role !== "human" || !state?.remote || !["queued", "loading", "countdown"].includes(state.phase) || !state.startRequest)) return;
     if (action === "start" && state?.remote && (state.phase !== "lobby" || state.remote.gpuReservationSupported !== true || state.remote.imageBarrierSupported !== true)) return;
-    const source = acceptedState.current;
+    if (action === "new-participant") resetSession();
+    const source = acceptedState.current, request = requestContext(), busyToken = Symbol(action);
+    busyRequest.current = busyToken;
     setBusy(action); setError("");
     if (action === "submit") setFeedback("");
     try {
       if (action === "create" || action === "join" || action === "new-participant") {
-        if (action === "new-participant") leave();
         const create = action !== "join";
         const result = await api<Session & { state: RoomState }>(create ? "/api/rooms" : "/api/rooms/join", undefined, create ? mode === "remote" ? { mode: "remote", lane } : {} : { code: code.trim().toUpperCase(), role: "bot", ...(mode === "remote" ? { lane } : {}) });
-        saveSession(result.data, result.data.state, result.before, result.after);
+        if (requestIsCurrent(request)) saveSession(result.data, result.data.state, result.before, result.after);
       } else if (session) {
         const payload = action === "ready" ? { ready: true } : action === "submit" ? { roundId: state?.roundId, tileIds: [...selected] } : action === "next" ? { roundId: state?.roundId } : action === "cancel-start" ? { requestId: state?.startRequest?.id } : action === "start" && state?.remote ? { expectedRevision: state.revision } : {};
         const result = await api<RoomResponse>(`/api/rooms/${encodeURIComponent(session.roomId)}/${action}`, session.token, payload);
-        const accepted = receive(roomFrom(result.data), result.before, result.after);
+        const accepted = requestIsCurrent(request) && receive(roomFrom(result.data), result.before, result.after);
         if (accepted && action === "submit" && "state" in result.data && result.data.correct === false && result.data.state.phase === "playing") {
           setFeedback("아직 정답이 아니에요. 사진을 수정해서 다시 제출하세요. 시간은 계속 흐릅니다.");
         }
       }
     } catch (failure) {
+      if (!requestIsCurrent(request) || recoverSession(failure, request)) return;
       const sessionAction = action !== "create" && action !== "join" && action !== "new-participant";
       if (!sessionAction || activeRoom.current === source?.roomId && sameActionContext(source, acceptedState.current)) setError(failure instanceof Error ? failure.message : "요청 중 오류가 발생했습니다.");
     }
-    finally { setBusy(""); }
+    finally { if (busyRequest.current === busyToken) { busyRequest.current = null; setBusy(""); } }
   };
 
   const leave = () => {
-    activeRoom.current = null;
-    sessionStorage.removeItem(storageKey.current); setSession(null); setState(null); setSelected(new Set());
-    setLoaded(new Set()); setError(""); setFeedback(""); setCode(""); setCopied(false); setConnected(false); acceptedState.current = null; roundRef.current = null;
+    resetSession();
   };
   const chooseLane = (next: Lane) => {
-    if (session || busy) return;
+    if (session || busyRequest.current) return;
     setLane(next); activeLane.current = next; setError(""); setCode("");
     storageKey.current = sessionKey(role, mode, next);
     try { localStorage.setItem(`alpha-arena-lane-${role}`, next); } catch { /* The URL is also persistent across reloads. */ }
@@ -281,16 +313,17 @@ export default function Arena() {
   useEffect(() => {
     if (!session || !state?.imageLoad || !state.roundId || !state.startRequest
       || !["loading", "countdown"].includes(state.phase) || imageMount.current === state.roundId) return;
-    const snapshot = state, roundId = state.roundId;
+    const snapshot = state, roundId = state.roundId, request = requestContext();
     imageMount.current = roundId; imageAck.current = null;
     void (async () => {
       let confirmed = false;
       try {
         const result = await api<RoomResponse>(`/api/rooms/${session.roomId}/images-ready`, session.token,
           { roundId, requestId: snapshot.startRequest!.id, imageLoadId: snapshot.imageLoad!.id, ready: false });
-        if (activeRoom.current === session.roomId) receive(roomFrom(result.data), result.before, result.after);
+        if (requestIsCurrent(request)) receive(roomFrom(result.data), result.before, result.after);
         confirmed = true;
-      } catch {
+      } catch (failure) {
+        if (!requestIsCurrent(request) || recoverSession(failure, request)) return;
         try {
           const result = await api<RoomResponse>(`/api/rooms/${session.roomId}`, session.token);
           const latest = roomFrom(result.data);
@@ -298,27 +331,28 @@ export default function Arena() {
           // changed the epoch before this page can reuse its registration.
           confirmed = latest.roundId === roundId && !!latest.imageLoad
             && latest.imageLoad.id !== snapshot.imageLoad!.id;
-          if (activeRoom.current === session.roomId) receive(latest, result.before, result.after);
-        } catch { /* The next normal poll retries registration. */ }
+          if (requestIsCurrent(request)) receive(latest, result.before, result.after);
+        } catch (failure) { recoverSession(failure, request); }
       } finally {
-        if (activeRoom.current === session.roomId && roundRef.current === roundId) {
+        if (requestIsCurrent(request) && roundRef.current === roundId) {
           if (confirmed) setRegisteredImageRound(roundId);
           else imageMount.current = null;
         }
       }
     })();
-  }, [session, state, receive]);
+  }, [session, state, receive, requestContext, requestIsCurrent, recoverSession]);
   useEffect(() => {
     if (!session || !state?.imageLoad || !state.roundId || registeredImageRound !== state.roundId || !state.startRequest
       || !["loading", "countdown"].includes(state.phase) || !pageVisible || !imagesReady && !imageError) return;
     const key = `${state.roundId}:${state.imageLoad.id}:${imageError ? "failed" : "ready"}`;
     if (imageAck.current === key) return;
+    const request = requestContext();
     imageAck.current = key;
     void api<RoomResponse>(`/api/rooms/${session.roomId}/images-ready`, session.token,
       { roundId: state.roundId, requestId: state.startRequest.id, imageLoadId: state.imageLoad.id, ready: !imageError, failed: imageError })
-      .then(result => { if (activeRoom.current === session.roomId) receive(roomFrom(result.data), result.before, result.after); })
-      .catch(() => { if (imageAck.current === key) imageAck.current = null; });
-  }, [session, state, registeredImageRound, imagesReady, imageError, pageVisible, receive]);
+      .then(result => { if (requestIsCurrent(request)) receive(roomFrom(result.data), result.before, result.after); })
+      .catch(failure => { if (requestIsCurrent(request) && !recoverSession(failure, request) && imageAck.current === key) imageAck.current = null; });
+  }, [session, state, registeredImageRound, imagesReady, imageError, pageVisible, receive, requestContext, requestIsCurrent, recoverSession]);
   // A backgrounded browser cannot promise a visible common start. Withdraw
   // its readiness once per hidden period, and re-ACK the same decoded images
   // when visible again. The server rejects withdrawals after actual start.
@@ -326,12 +360,13 @@ export default function Arena() {
     if (pageVisible) { hiddenResetRound.current = null; return; }
     if (!session || !state?.imageLoad || !state.roundId || !state.startRequest
       || !["loading", "countdown"].includes(state.phase) || hiddenResetRound.current === state.roundId) return;
+    const request = requestContext();
     hiddenResetRound.current = state.roundId; imageAck.current = null;
     void api<RoomResponse>(`/api/rooms/${session.roomId}/images-ready`, session.token,
       { roundId: state.roundId, requestId: state.startRequest.id, imageLoadId: state.imageLoad.id, ready: false })
-      .then(result => { if (activeRoom.current === session.roomId) receive(roomFrom(result.data), result.before, result.after); })
-      .catch(() => { if (hiddenResetRound.current === state.roundId) hiddenResetRound.current = null; });
-  }, [session, state, pageVisible, receive]);
+      .then(result => { if (requestIsCurrent(request)) receive(roomFrom(result.data), result.before, result.after); })
+      .catch(failure => { if (requestIsCurrent(request) && !recoverSession(failure, request) && hiddenResetRound.current === state.roundId) hiddenResetRound.current = null; });
+  }, [session, state, pageVisible, receive, requestContext, requestIsCurrent, recoverSession]);
   const winner = state?.result?.winner;
   const winningElapsed = winner === "human" || winner === "bot" ? state?.[winner].elapsedMs : null;
   const finalElapsed = state?.result?.elapsedMs ?? winningElapsed ?? (state?.startAt && state.deadlineAt ? state.deadlineAt - state.startAt : 0);

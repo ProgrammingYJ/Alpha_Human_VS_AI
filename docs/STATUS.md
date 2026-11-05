@@ -2,7 +2,46 @@
 
 최종 검토: 2026-11-05 (Asia/Pyongyang)
 
-## 최신 작업: A/B 실제 병렬 추론 적용 (2026-11-05)
+## 최신 작업: 운영 연결 init·중복 봇 연결 복구 (2026-11-05)
+
+사용자가 ‘아예 다 재부팅/init’과 이미 연결된 봇 오류를 제보했다. PC 실행기 재시작은 메모리 토큰만 없애며 서버 D1의 `bot_token_hash`/`engine_token_hash`는 유지된다. 기존 방의 최초 참가를 반복해 역할을 덮는 대신, 비밀정보가 아닌 서버 환경 `ARENA_SESSION_RESET_BEFORE_MS`의 생성시각 경계로 옛 방의 모든 역할 권한을 논리적으로 철회하는 복구를 추가했다. 이번 작업은 Windows 자체 재부팅이나 데이터 삭제가 아니다.
+
+### 초기화 계약과 현재 확인 범위
+
+- `room.created_at <= cutoff`인 방은 코드 참가·권한 확인 전 조회/행동과 공개 현재 라운드 사진에서410 `room_reset`이다. 새로운 방은 기존 인증/레인 계약으로 최초 연결한다. D1 방/라운드·토큰 해시·과거 결과, 사진/라벨·R2와 모델 파일은 삭제하지 않는다.
+- 경계가 미설정이면 비활성화하고 형식/범위가 잘못됐거나 미래이면503 `session_reset_unavailable`로 중단한다. 적용한 경계는 후속 배포에도 보존하며 옛 권한을 되살리려고 제거/감소시키지 않는다. 기존 `ADMIN_KEY`를 새로 읽거나 회전하는 초기화가 아니며 소유자 ID·권한도 유지한다.
+- 웹은 현재 연결의410 `room_reset`/`room_expired`에서 해당 sessionStorage와 선택/사진/시계·메모리 상태를 비워 시작 화면으로 돌아간다. 연결 세대/roomId/storageKey 검사로 옛 응답이 새 연결을 지우거나 복원하지 못한다. `?reset=1`은 열린 origin/탭의 remote 인간/봇 A/B 네 키를 값 열람 없이 비우고 reset/fragment를 URL에서 제거한다. 다른 origin/탭은 각 화면에서 열어야 하며 이 주소 자체는 서버 전역 초기화를 실행하지 않는다.
+- 서버/UI 단위 **Node118개·TypeScript·production build/diff 통과**, 전체 Python **194개 통과15.522초**를 확인했다. Python은 reset410/503의 제한된 한국어 진단 회귀1개를 추가했다. 코드 검사를 실제 Chrome·ML 경기 완료로 확대하지 않는다. 공개 QA 도우미의 첫 stdin EOF와 v2 수동 중단/오류 파싱 문제는 검증 준비 미완료의 하네스 이력으로 보존하고 보완한 v3 공개 결과와 구분한다.
+- 기본parallel2슬롯/2CUDA스트림·공유 가중치·protocol3·각 방9사진 준비/공통 출발·500ms/250ms·같은 방 next는 유지한다. 새 모델 학습/전처리/임계값·활성34사진/라벨·학교 사용 변경0이며40%/ONNX/Pi/legacy OS 입력과 현장 리허설은 별도 미완료다.
+
+### 배포·공개 검사·PC 가동의 확정 기록
+
+**Sites 버전14·환경revision6 게시 succeeded**다. 기존 public audience·human/bot 두 주소·ADMIN_KEY/ADMIN_OWNER_ID는 변경0이다. 비밀정보가 아닌 서버 시각 기준 경계 **1793862306432 Unix ms**를 설정했다. source `28d18857722ee6cbc2e93ad86c43621a5cfb449b`, saved `appgprj_6ade37995018819184a42c88bb0fde7c~appgver_03faf9e180ac81919e7e912f4780cda0`, deployment `appgdep_6aec2b03d760819191da6af1b79b0701`이다. 배포 기록 (로컬 산출물: `runs/session-reset-20261105/release.json`). native Sites의 DB 직접 쓰기 수단이 없고 기존 관리자 키 값은 마스킹되어 있어, 비밀값 회전이나 DB 삭제 대신 이 비밀 아닌 환경 경계를 사용했다.
+
+공개 QA v3 (로컬 산출물: `runs/session-reset-20261105/public-reset-verification-v3.json`)는 이전 A/B 인간·표시·엔진GET6개와 옛 코드 참가2개, 총8개가410 `room_reset`임을 확인했다. 새 A/B 방 생성·표시 참가·실제 engine heartbeat/ready·사진 없는 lobby는 모두 통과했다. 코드/토큰은 RAM에서만 사용하고 결과에 보관하지 않았다. 이 연결 QA에는 ML 추론·경기 시작/정답 제출·관리 정답 읽기가 없다. 첫 하네스 stdin EOF와 v2 수동 중단/오류 파싱은 제품의 철회 실패나 새 연결 성공으로 세지 않는다.
+
+공개 surface는 두 호스트 HTML/health 및 각17개 초기 자산의 HTTP200과 `sessionResetSupported=true`를 확인했다. IAB 인간A/봇A의 `?reset=1`에서 시작 화면의 새 방 만들기/빈 코드 입력·타이머0 및 URL의 reset 제거를 확인했다. **옛 토큰을 보유한 실제 브라우저의410 자동 복구 실측은 아니며 사용자 외부 PC의 저장소를 대신 지운 것도 아니다.** 자동 복구/늦은 응답 격리는 단위 회귀와 실제 화면 초기화를 구분한다. 사용자 각 화면의 새 최초 연결과 한 판·연속 운영/현장 성능은 남아 있다.
+
+이전 **21536→43456→38212**는 절대 경로/부모 관계를 확인한 뒤 이 업데이트를 위해 해당 체인만 종료했다. 새 정규 운영 체인 **41224→42632→41396**의 경로/부모 관계와 생존을 확인해 계속 켜 두었다. 두 Python PID는 한 가상환경 실행 체인이다. 신규 가동 (로컬 산출물: `runs/session-reset-20261105/operator-start.json`), startup (로컬 산출물: `runs/remote-engine/20261105-160822-58d04071/startup.json`)은 CUDA·parallel2슬롯·CUDA2stream·가중치 한 벌 공유·두 worker 합성 예열 완료이며 load6.500초+warm3.672초=전체10.172초다. 에이전트의 사용자 A/B 코드 입력0으로 특정 사용자 방 준비 완료는 주장하지 않는다. 아래의 모든 과거 PID/startup은 당시 이력이며 현재 생존의 근거로 재사용하지 않는다.
+
+**완료:** v14 게시/경계 적용·이전 권한 철회/새 연결 공개 QA·서버/UI/Python 회귀·IAB 수동 reset 초기 화면·정규 PC 재기동/생존 확인. **남음:** 사용자 외부 네 화면 reset/새 A/B 방 최초 연결·한 판/연속 참가자·실제 옛 브라우저410 자동 복구·행사 장시간/네트워크 리허설과 기존40%/ONNX/Pi/legacy OS 입력이다. 이번 새 모델 학습·ML 정확도/속도 측정·사진 교체·학교 사용·Windows OS 재부팅은 없다. GitHub 후속 소스 동기화는 별도 결과를 따른다.
+
+사용자 복구 순서는 각 [인간 A](https://human.marulee.dev/?lane=A&reset=1)·[봇 A](https://bot.marulee.dev/?lane=A&reset=1)·[인간 B](https://human.marulee.dev/?lane=B&reset=1)·[봇 B](https://bot.marulee.dev/?lane=B&reset=1)의 옛 저장소 제거→인간 A/B 새 방 생성→같은 레인의 AI 표시와 PC 콘솔에 새 코드 최초 연결이다. 실행기는 하나만 사용하고 이후 정상 참가자 교체는 같은 방의 다음 참가자 준비를 유지한다. 코드를 파일/인자/로그에 옮기지 않는다.
+
+재현/문서 점검 형식(프로젝트 루트, 결과 경로는 새 이름 사용):
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 scripts/check_docs.py --date 2026-11-05
+.\.venv\Scripts\python.exe -X utf8 runs/site-publish/audit_docs.py --date 2026-11-05 --output runs/session-reset-20261105/document-audit-new.json
+# 서버/UI 회귀는 web/alpha-arena에서 수행한다.
+node --test server/session-reset.test.mjs components/arena-session.test.mjs
+```
+
+공개 철회 검증 도구는 `runs/session-reset-20261105/verify_reset.py`이며 첫 단계와 게시 뒤 단계 사이에 코드/토큰을 RAM으로 유지하는 운영 QA다. 단순히 완료한 초기화 경계에 도구를 재실행해 옛 방이 생성됐다고 가정하지 않는다. 새 전역 init의 경계/게시와 연계하고 기존 결과를 덮어쓰지 않는다. 숨긴 QA 권한은 공개 모델 입력과 분리한다. Node118개 전체 단위 명령과 build·공개 surface의 실행 상세는 해당 배포/QA 기록을 따른다.
+
+이번 작업 검토: 운영 init — 2026-11-05 관리13개 전체 본문과 과거 이력을 재독·갱신하며 기존 역할 해시·PC/브라우저 메모리 차이와 논리적 철회·새 방 복구를 대조했다. 실제 v14/환경6·cutoff·공개 이전8권한 철회/새 A/B 연결·Node118/Python194·IAB 초기 화면과 신규 startup/생존을 확인한 범위로 기록한다. `check_docs.py --date 2026-11-05`의13개 및 별도 전수 감사의UTF-8·로컬 링크·전체 목록·설정JSON8개가 모두 통과했다. 문서 감사 (로컬 산출물: `runs/session-reset-20261105/document-audit-agent.json`)는 기계 검사이며 본문은 별도로 직접 대조했다. 새 Markdown은 없다.
+
+## 이전 작업: A/B 실제 병렬 추론 적용 (2026-11-05)
 
 사용자가 외부 시험에서 기존 FIFO를 확인하고 병렬 연산을 명시적으로 요청했다. 기존 한 개 GPU 잠금을 기본 경로에서 제거하고 **parallel 독립 슬롯2개·CUDA 스트림2개**로 바꿨다. A/B 각각 사진 준비·카운트다운·추론을 진행하며 다른 레인의 완료를 기다리지 않는다. 모델 가중치 한 세트는 공유하고 processor/tokenizer·입력·진단 상태는 worker별로 분리한다. 읽기 전용 예측에서는 model.to/eval을 반복하지 않으며 해당 CUDA 스트림만 동기화한다. `--inference-mode serial` / PowerShell `-InferenceMode serial`만 이전 FIFO 비교/복구 경로다.
 
@@ -39,7 +78,7 @@
 
 나무+사람 등 일부 조합은 느려졌으며 시간은 입력 사진·GPU 상태에 의존한다. 이번 변경의 확정 결과는 A/B 독립 입장과 실제 동시 연산이다. 11/02 별도 후보 실험 및 11/01의 B10.438초 예약 전 대기는 이전 FIFO 이력으로 보존한다.
 
-### 현재 운영 엔진
+### 당시 운영 엔진 (이번 init 이전 이력)
 
 수정 적용을 위해 이전 운영 체인43132→17060→38628의 절대 경로/부모 관계를 다시 검사한 뒤 해당 체인만 종료했다. 토큰을 디스크/프로세스 메모리 덤프로 추출하지 않았다. GPU 검사 후 정규 실행기를 새 interactive 콘솔로 다시 켜 두었다. 새 체인은 **21536 → 43456 → 38212**이며 두 Python PID는 가상환경 실행 체인이다. 새 가동 기록 (로컬 산출물: `runs/parallel-operating-20261105/operator-start.json`), startup (로컬 산출물: `runs/remote-engine/20261105-155403-523db1f2/startup.json`).
 

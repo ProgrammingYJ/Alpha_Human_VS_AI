@@ -48,7 +48,7 @@ SAFE_ERROR_CODES = frozenset({
     "protocol_upgrade_required", "start_request_changed", "queue_expired", "room_changed", "invalid_start_request",
     "start_cancelled", "reservation_required", "plan_conflict", "plan_changed", "plan_active", "plan_too_late", "plan_not_acknowledged",
     "image_load_changed", "image_load_failed", "image_load_timeout", "images_timeout", "image_cache_changed",
-    "not_loading",
+    "not_loading", "room_reset", "session_reset_unavailable",
 })
 _UNSET = object()
 
@@ -1447,6 +1447,8 @@ def safe_diagnostic(code):
         "engine_not_ready": "서버가 엔진 준비 상태를 확인하지 못했습니다. 새 방으로 다시 연결하세요.",
         "not_found": "연결할 방이 없습니다. 패드에서 새 방을 만들고 코드를 확인하세요.",
         "room_expired": "방이 만료됐습니다. 새 참가자의 새 방을 사용하세요.",
+        "room_reset": "운영자가 기존 연결을 초기화했습니다. 인간 화면에서 새 방을 만들고 AI 표시 화면과 PC를 새 코드로 다시 연결하세요.",
+        "session_reset_unavailable": "서버의 세션 초기화 설정을 확인해야 합니다. 운영자에게 알려 주세요.",
         "connection_failed": "서버 연결이 끊겼습니다. 인터넷과 사이트 상태를 확인하세요.",
         "heartbeat_failed": "서버 생존 확인에 실패해 이 레인의 입력을 중단했습니다.",
         "wait_timeout": "경기 시작 또는 종료를 기다리는 제한 시간이 지났습니다.",

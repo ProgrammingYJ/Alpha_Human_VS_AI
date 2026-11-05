@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { ArenaError, THEMES, bankReadiness, exactMatch, makeChallenge, randomInt, validatePhotoMetadata, validateSelection } from "./logic.mjs";
-import { START_ROUND_INSERT, START_ROOM_UPDATE, FINISH_IF_CORRECT, PHOTO_FOR_CURRENT_ROUND, submitStatement } from "./statements.mjs";
+import { START_ROUND_INSERT, START_ROOM_UPDATE, FINISH_IF_CORRECT, submitStatement } from "./statements.mjs";
+import { sessionResetCutoff, requireCurrentSession, SESSION_PHOTO_FOR_CURRENT_ROUND } from "./session-reset.mjs";
 import { ownerMatches } from "./authorization.mjs";
 import { ACTIVATE_PHOTO_BANK, SELECT_PHOTO_BANK, validateActivePhotoBank, validateActivePhotoIds } from "./photo-bank.mjs";
 import { projectStateAfterRemoteRead } from "./state-projection.mjs";
@@ -14,7 +15,7 @@ import { IMAGE_LOADING_MS, UNSTARTED_AT, IMAGE_BEGIN_INSERT, IMAGE_BEGIN_ROOM, I
   imageAckStatement, imageReleaseBindings, imageCancellationReason, prestartImages, validateImageEpoch, recoverPreparedImages } from "./image-barrier.mjs";
 
 type Role = "human" | "bot" | "engine";
-type Bindings = { DB?: D1Database; BUCKET?: R2Bucket; ADMIN_KEY?: string; ADMIN_OWNER_ID?: string };
+type Bindings = { DB?: D1Database; BUCKET?: R2Bucket; ADMIN_KEY?: string; ADMIN_OWNER_ID?: string; ARENA_SESSION_RESET_BEFORE_MS?: string };
 type Room = {
   id: string; code: string; human_token_hash: string; bot_token_hash: string | null;
   human_ready: number; bot_ready: number; phase: string; round_id: string | null;
@@ -51,13 +52,18 @@ function bucket() {
 }
 function json(value: unknown, status = 200) { return Response.json(value, { status, headers: RESPONSE_HEADERS }); }
 export async function arenaHealth() {
+  sessionResetCutoff(bindings().ARENA_SESSION_RESET_BEFORE_MS);
   await db().prepare("SELECT image_load_id FROM arena_rounds LIMIT 1").first();
   bucket();
-  return json({ ok: true, protocolVersion: 3, imageReadinessBarrier: true,
+  return json({ ok: true, protocolVersion: 3, imageReadinessBarrier: true, sessionResetSupported: true,
     minimumTileIntervalMs: TILE_INTERVAL_MS, serverNow: Date.now() });
 }
 export async function route(action: () => Promise<Response>) {
-  try { return await action(); } catch (error) {
+  try {
+    // Invalid reset configuration must never silently restore old capabilities.
+    sessionResetCutoff(bindings().ARENA_SESSION_RESET_BEFORE_MS);
+    return await action();
+  } catch (error) {
     if (error instanceof ArenaError) return json({ error: error.message, code: error.code }, error.status);
     // SQL, object keys, provenance and secret values must never enter an error response.
     console.error("[alpha-arena] request failed", error instanceof Error ? error.name : "UnknownError");
@@ -115,6 +121,7 @@ async function getRoom(id: string) {
   if (!validId(id)) throw new ArenaError("not_found", "대기실을 찾을 수 없습니다.", 404);
   const room = await db().prepare("SELECT * FROM arena_rooms WHERE id = ?").bind(id).first<Room>();
   if (!room) throw new ArenaError("not_found", "대기실을 찾을 수 없습니다.", 404);
+  requireCurrentSession(room, bindings().ARENA_SESSION_RESET_BEFORE_MS);
   if (Date.now() >= room.expires_at) throw new ArenaError("room_expired", "대기실이 만료됐습니다. 새로 만들어 주세요.", 410);
   return room;
 }
@@ -212,6 +219,8 @@ async function activePhotos() {
 export async function createRoom(request: Request) {
   const value = await payload(request); const lane = validateRoomMode(value);
   const id = crypto.randomUUID(), token = newToken(), hash = await digest(token), now = Date.now();
+  // A same-millisecond creation must not return a room that is already fenced.
+  requireCurrentSession({ created_at: now }, bindings().ARENA_SESSION_RESET_BEFORE_MS, now);
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
     try {
@@ -227,8 +236,10 @@ export async function joinRoom(request: Request) {
   const value = await payload(request);
   if (!["bot", "engine"].includes(value.role as string) || typeof value.code !== "string" || !/^[A-Z2-9]{8}$/.test(value.code.trim().toUpperCase())) throw new ArenaError("invalid_code", "8자리 대기실 코드를 확인해 주세요.");
   const code = value.code.trim().toUpperCase();
-  const room = await db().prepare("SELECT * FROM arena_rooms WHERE code = ? AND expires_at > ?").bind(code, Date.now()).first<Room>();
+  const room = await db().prepare("SELECT * FROM arena_rooms WHERE code = ?").bind(code).first<Room>();
   if (!room) throw new ArenaError("not_found", "참가 가능한 대기실을 찾을 수 없습니다.", 404);
+  requireCurrentSession(room, bindings().ARENA_SESSION_RESET_BEFORE_MS);
+  if (Date.now() >= room.expires_at) throw new ArenaError("not_found", "참가 가능한 대기실을 찾을 수 없습니다.", 404);
   const remote = await getRemote(room.id); validateLane(value.lane, remote);
   if (value.role === "engine" && !remote) throw new ArenaError("invalid_mode", "원격 엔진은 remote 대기실에만 연결할 수 있습니다.", 409);
   const token = newToken();
@@ -594,7 +605,8 @@ export async function readPhoto(id: string) {
   // Public opaque IDs belong to one current round. Prepared remote rounds
   // permit fetching before the clock; browser pixels stay hidden until start.
   const now = Date.now();
-  const found = await db().prepare(PHOTO_FOR_CURRENT_ROUND).bind(id, now, now).first<Photo & { visible_at: number }>();
+  const found = await db().prepare(SESSION_PHOTO_FOR_CURRENT_ROUND).bind(id, now, now).first<Photo & { visible_at: number; session_created_at: number }>();
   if (!found || Date.now() < found.visible_at) throw new ArenaError("not_found", "사진을 찾을 수 없습니다.", 404);
+  requireCurrentSession({ created_at: found.session_created_at }, bindings().ARENA_SESSION_RESET_BEFORE_MS);
   return serveObject(found);
 }
