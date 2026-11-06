@@ -18,6 +18,14 @@ export function currentSessionRequest(request, current) {
 }
 
 export function resetSessionFailure(failure, request, current) {
-  return failure?.status === 410 && ["room_reset", "room_expired"].includes(failure.code)
+  return failure?.status === 410 && ["room_reset", "room_expired", "lane_disabled"].includes(failure.code)
     && currentSessionRequest(request, current);
+}
+
+/** Resolve only after reading the server's operation mode, before restoring a token. */
+export function operationLane(mode, requestedLane, savedLane, remote = true) {
+  if (!["single", "dual"].includes(mode)) throw new Error("운영 모드를 확인하지 못했습니다. 화면을 새로고침해 주세요.");
+  const candidate = ["A", "B"].includes(requestedLane) ? requestedLane : savedLane === "B" ? "B" : "A";
+  return { lane: remote && mode === "single" ? "A" : candidate,
+    disabledPreviousLane: remote && mode === "single" && candidate === "B" };
 }

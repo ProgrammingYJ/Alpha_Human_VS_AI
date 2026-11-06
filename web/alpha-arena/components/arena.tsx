@@ -5,12 +5,13 @@ import Link from "next/link";
 import { acceptsRoomState, publicRoundView, remoteDisplayIndices, roomPollIntervalMs, sameActionContext } from "./arena-state.mjs";
 import { engineStatus } from "./engine-status.mjs";
 import { clockSample } from "./server-clock.mjs";
-import { clearRemoteSessions, currentSessionRequest, resetSessionFailure, sessionKey } from "./arena-session.mjs";
+import { clearRemoteSessions, currentSessionRequest, resetSessionFailure, sessionKey, operationLane } from "./arena-session.mjs";
 import { ArrowRight, Bot, Check, CheckCheck, ChevronRight, CircleHelp, Clock3, Copy, Flag, Image as ImageIcon, Link2, LoaderCircle, LockKeyhole, Radio, ShieldCheck, Sparkles, Timer, Trophy, UserRound, UsersRound, X } from "lucide-react";
 
 type Role = "human" | "bot";
 type Lane = "A" | "B";
 type Mode = "remote" | "legacy";
+type OperationMode = "single" | "dual";
 type RemoteState = {
   mode: "remote"; lane: Lane; viewerConnected: boolean; engineConnected: boolean;
   engineStage: string;
@@ -23,6 +24,7 @@ type RemoteState = {
 };
 type PlayerState = { ready: boolean; submitted: boolean; correct: boolean | null; elapsedMs: number | null };
 type RoomState = {
+  operationMode?: OperationMode;
   revision?: number;
   serverNow: number; roomId: string; code: string; phase: "lobby" | "queued" | "loading" | "countdown" | "playing" | "result";
   roundId: string | null; roundNumber: number; startAt: number | null; deadlineAt: number | null;
@@ -76,6 +78,7 @@ export default function Arena() {
   const [role, setRole] = useState<Role>("human");
   const [mode, setMode] = useState<Mode>("remote");
   const [lane, setLane] = useState<Lane>("A");
+  const [operatingMode, setOperatingMode] = useState<OperationMode | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [state, setState] = useState<RoomState | null>(null);
   const [code, setCode] = useState("");
@@ -106,19 +109,23 @@ export default function Arena() {
   const requestContext = useCallback((): SessionRequest => ({ generation: sessionGeneration.current,
     roomId: activeRoom.current, storageKey: storageKey.current }), []);
   const requestIsCurrent = useCallback((request: SessionRequest) => currentSessionRequest(request, requestContext()), [requestContext]);
-  const resetSession = useCallback((message = "") => {
+  const resetSession = useCallback((message = "", keepStoredSession = false) => {
     sessionGeneration.current += 1;
     activeRoom.current = null; acceptedState.current = null; roundRef.current = null;
     clockEstimate.current = null; imageMount.current = null; imageAck.current = null; hiddenResetRound.current = null;
     busyRequest.current = null;
-    try { sessionStorage.removeItem(storageKey.current); } catch { /* Keep the in-memory session cleared when storage is unavailable. */ }
+    if (!keepStoredSession) {
+      try { sessionStorage.removeItem(storageKey.current); } catch { /* Keep the in-memory session cleared when storage is unavailable. */ }
+    }
     setSession(null); setState(null); setSelected(new Set()); setLoaded(new Set()); setImageError(false);
     setRegisteredImageRound(null); setClockOffset(0); setNow(performance.now()); setConnected(false);
     setBusy(""); setFeedback(""); setCode(""); setCopied(false); setError(message);
   }, []);
   const recoverSession = useCallback((failure: unknown, request: SessionRequest) => {
     if (!resetSessionFailure(failure, request, requestContext())) return false;
-    resetSession(failure instanceof ApiFailure && failure.code === "room_reset"
+    resetSession(failure instanceof ApiFailure && failure.code === "lane_disabled"
+      ? "현재 한 대결만 운영합니다. 이전 구역 연결을 비웠으니 새 방이나 새 코드로 연결해 주세요."
+      : failure instanceof ApiFailure && failure.code === "room_reset"
       ? "운영 준비가 초기화됐어요. 새 대결방을 만들거나 새 연결 코드를 입력해 주세요."
       : "대기실이 만료됐어요. 새 대결방을 만들거나 새 연결 코드를 입력해 주세요.");
     return true;
@@ -131,6 +138,7 @@ export default function Arena() {
     }
     const previous = acceptedState.current;
     acceptedState.current = next;
+    if (next.operationMode === "single" || next.operationMode === "dual") setOperatingMode(next.operationMode);
     const fixedCountdown = previous?.phase === "countdown" && next.phase === "countdown"
       && previous.imageLoad?.id === next.imageLoad?.id && previous.startAt === next.startAt;
     clockEstimate.current = clockSample(clockEstimate.current, next.serverNow, before, after, fixedCountdown);
@@ -150,44 +158,72 @@ export default function Arena() {
     const detected: Role = params.get("role") === "bot" || window.location.hostname.startsWith("bot.") ? "bot" : "human";
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const roomId = explicitReset ? null : fragment.get("room"); const token = explicitReset ? null : fragment.get("token");
+    // A configuration outage must not leave one-time role credentials visible.
+    if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
     const detectedMode: Mode = params.get("mode") === "legacy" || (roomId && token && params.get("mode") !== "remote") ? "legacy" : "remote";
-    let savedLane: string | null = null;
-    try { savedLane = localStorage.getItem(`alpha-arena-lane-${detected}`); } catch { /* The URL still identifies the pad when storage is unavailable. */ }
-    const requestedLane = params.get("lane")?.toUpperCase();
-    const detectedLane: Lane = requestedLane === "A" || requestedLane === "B" ? requestedLane : savedLane === "B" ? "B" : "A";
-    activeLane.current = detectedLane;
-    storageKey.current = sessionKey(detected, detectedMode, detectedLane);
-    if (explicitReset) {
-      try { clearRemoteSessions(sessionStorage); } catch { /* Reset memory even if browser storage is unavailable. */ }
-      resetSession();
-      params.delete("reset");
-    }
-    let restored: Session | null = null;
-    if (!explicitReset && roomId && token) {
-      const next = { roomId, token, code: "" };
-      sessionStorage.setItem(storageKey.current, JSON.stringify(next));
-      restored = next;
-    } else if (!explicitReset) {
+    let stopped = false;
+    const initialize = async () => {
       try {
-        const stored = sessionStorage.getItem(storageKey.current);
-        const parsed: Session | null = stored ? JSON.parse(stored) : null;
-        if (parsed && typeof parsed.roomId === "string" && typeof parsed.token === "string") restored = parsed;
-      } catch { sessionStorage.removeItem(storageKey.current); }
-    }
-    // A runner hands the role token to this tab once; never retain it in the URL.
-    params.set("lane", detectedLane);
-    if (detectedMode === "legacy") params.set("mode", "legacy");
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+        // The server owns the profile. Query strings cannot re-enable B.
+        const health = await api<{ operationMode: OperationMode }>("/api/health");
+        if (stopped) return;
+        const profile = health.data.operationMode;
+        let savedLane: string | null = null;
+        try { savedLane = localStorage.getItem(`alpha-arena-lane-${detected}`); } catch { /* URL remains usable without storage. */ }
+        const choice = operationLane(profile, params.get("lane")?.toUpperCase(), savedLane, detectedMode === "remote");
+        const detectedLane = choice.lane as Lane;
+        activeLane.current = detectedLane;
+        storageKey.current = sessionKey(detected, detectedMode, detectedLane);
+        if (explicitReset) {
+          try { clearRemoteSessions(sessionStorage); } catch { /* Reset memory even when storage is unavailable. */ }
+          resetSession();
+        } else if (choice.disabledPreviousLane) {
+          // Do not inspect a disabled B capability or silently restore A in its place.
+          try { sessionStorage.removeItem(sessionKey(detected, "remote", "B")); } catch { /* Memory starts empty. */ }
+          resetSession("현재 한 대결만 운영합니다. 이전 B 구역 연결 대신 새 준비실로 전환했어요. 새 방이나 새 코드를 사용해 주세요.", true);
+        }
+        let restored: Session | null = null;
+        if (!explicitReset && !choice.disabledPreviousLane && roomId && token) {
+          const next = { roomId, token, code: "" };
+          sessionStorage.setItem(storageKey.current, JSON.stringify(next));
+          restored = next;
+        } else if (!explicitReset && !choice.disabledPreviousLane) {
+          try {
+            const stored = sessionStorage.getItem(storageKey.current);
+            const parsed: Session | null = stored ? JSON.parse(stored) : null;
+            if (parsed && typeof parsed.roomId === "string" && typeof parsed.token === "string") restored = parsed;
+          } catch { try { sessionStorage.removeItem(storageKey.current); } catch { /* Empty memory remains usable. */ } }
+        }
+        params.delete("reset");
+        if (profile === "single" && detectedMode === "remote") {
+          params.delete("lane");
+          try { localStorage.removeItem(`alpha-arena-lane-${detected}`); } catch { /* URL defaults to the single game. */ }
+        } else params.set("lane", detectedLane);
+        if (detectedMode === "legacy") params.set("mode", "legacy");
+        const search = params.toString();
+        // Never retain hand-off credentials in the URL after configuration.
+        window.history.replaceState(null, "", `${window.location.pathname}${search ? "?" + search : ""}`);
+        activeRoom.current = restored?.roomId || null;
+        setRole(detected); setMode(detectedMode); setLane(detectedLane); setOperatingMode(profile);
+        setSession(restored); setNow(performance.now());
+      } catch (failure) {
+        if (!stopped) {
+          setRole(detected); setMode(detectedMode); setOperatingMode(null);
+          setError(failure instanceof Error ? failure.message : "운영 설정을 확인하지 못했습니다. 화면을 새로고침해 주세요.");
+        }
+      }
+    };
+    void initialize();
     const visibility = () => setPageVisible(document.visibilityState === "visible");
     visibility(); document.addEventListener("visibilitychange", visibility);
-    const initialize = window.setTimeout(() => { activeRoom.current = restored?.roomId || null; setRole(detected); setMode(detectedMode); setLane(detectedLane); setSession(restored); setNow(performance.now()); }, 0);
     const ticker = window.setInterval(() => setNow(performance.now()), 50);
-    return () => { window.clearTimeout(initialize); window.clearInterval(ticker); document.removeEventListener("visibilitychange", visibility); };
+    return () => { stopped = true; window.clearInterval(ticker); document.removeEventListener("visibilitychange", visibility); };
   }, [resetSession]);
 
   useEffect(() => {
-    document.title = role === "bot" ? `ALPHA BOT | CAPTCHA · ${lane} 구역` : `ALPHA ARENA · 인간 vs AI · ${lane} 구역`;
-  }, [role, lane]);
+    const suffix = operatingMode === "dual" && mode === "remote" ? ` · ${lane} 구역` : "";
+    document.title = (role === "bot" ? "ALPHA BOT | CAPTCHA" : "ALPHA ARENA · 인간 vs AI") + suffix;
+  }, [role, lane, operatingMode, mode]);
 
   const pollIntervalMs = roomPollIntervalMs(role, state);
 
@@ -246,7 +282,7 @@ export default function Arena() {
   };
 
   const act = async (action: string) => {
-    if (busyRequest.current) return;
+    if (busyRequest.current || !operatingMode) return;
     if (role === "bot" && state?.remote && (action === "ready" || action === "submit" || action === "next" || action === "cancel-start" || action === "start")) return;
     if (action === "next" && (role !== "human" || !state?.remote || state.phase !== "result" || !state.roundId)) return;
     if (action === "cancel-start" && (role !== "human" || !state?.remote || !["queued", "loading", "countdown"].includes(state.phase) || !state.startRequest)) return;
@@ -281,7 +317,7 @@ export default function Arena() {
     resetSession();
   };
   const chooseLane = (next: Lane) => {
-    if (session || busyRequest.current) return;
+    if (session || busyRequest.current || operatingMode !== "dual") return;
     setLane(next); activeLane.current = next; setError(""); setCode("");
     storageKey.current = sessionKey(role, mode, next);
     try { localStorage.setItem(`alpha-arena-lane-${role}`, next); } catch { /* The URL is also persistent across reloads. */ }
@@ -290,6 +326,7 @@ export default function Arena() {
   };
   const remote = state?.remote;
   const remoteMode = mode === "remote";
+  const dual = operatingMode === "dual";
   const viewer = role === "bot" && remoteMode;
   const serverNow = now + clockOffset;
   const roundView = publicRoundView(state, serverNow);
@@ -386,22 +423,22 @@ export default function Arena() {
   const nextParticipantLabel = remote ? "다음 참가자 준비" : "새 참가자 대결 만들기";
   const cancellationMessages = { human_cancelled: "출발 대기를 취소했어요. 준비되면 다시 시작하세요.", engine_disconnected: "PC 봇 연결이 끊겨 출발 대기가 취소됐어요. 연결을 확인한 뒤 다시 시작하세요.", engine_error: "PC 봇 오류로 출발 대기가 취소됐어요. 운영자가 확인한 뒤 다시 시작하세요.", queue_expired: "출발 대기 시간이 지나 취소됐어요. PC 봇 준비를 확인한 뒤 다시 시작하세요.", image_load_failed: "사진을 불러오지 못해 출발을 취소했어요. 연결을 확인하고 다시 시작하세요.", image_load_timeout: "사진 준비 시간이 지나 출발을 취소했어요. 연결을 확인하고 다시 시작하세요." };
   const cancellationMessage = state?.phase === "lobby" && state.lastStartCancellationReason ? cancellationMessages[state.lastStartCancellationReason] : null;
-  const laneSelector = !session && remoteMode && <fieldset className="lane-picker"><legend>이 화면의 구역을 선택하세요</legend><div>{(["A", "B"] as Lane[]).map(item => <button type="button" key={item} className={lane === item ? "lane-option active" : "lane-option"} aria-pressed={lane === item} disabled={!!busy} onClick={() => chooseLane(item)}><strong>{item}</strong><span>{item} 구역</span></button>)}</div><p>한 대결의 인간 화면과 AI 표시 화면을 같은 구역으로 맞추세요.</p></fieldset>;
+  const laneSelector = !session && remoteMode && dual && <fieldset className="lane-picker"><legend>이 화면의 구역을 선택하세요</legend><div>{(["A", "B"] as Lane[]).map(item => <button type="button" key={item} className={lane === item ? "lane-option active" : "lane-option"} aria-pressed={lane === item} disabled={!!busy} onClick={() => chooseLane(item)}><strong>{item}</strong><span>{item} 구역</span></button>)}</div><p>한 대결의 인간 화면과 AI 표시 화면을 같은 구역으로 맞추세요.</p></fieldset>;
 
   const roomCard = <section className="side-card room-card" aria-labelledby="room-title">
-    <div className="side-heading"><h2 id="room-title">{session ? `${remote ? `${remote.lane} 구역 · ` : ""}대결 준비실` : role === "bot" ? "AI 표시 화면 연결" : "오늘의 도전자, 당신"}</h2><span className="step-index">{remoteMode ? `${lane} 구역` : session ? "CONNECTED" : "GET READY"}</span></div>
+    <div className="side-heading"><h2 id="room-title">{session ? `${remote && dual ? `${remote.lane} 구역 · ` : ""}대결 준비실` : role === "bot" ? "AI 표시 화면 연결" : "오늘의 도전자, 당신"}</h2><span className="step-index">{remoteMode && dual ? `${lane} 구역` : session ? "CONNECTED" : "GET READY"}</span></div>
     {!session ? <>
-      <p>{role === "human" ? "대결방을 만들고 AI 표시 화면과 PC 봇에 연결 코드를 알려 주세요." : "연결할 인간 화면의 구역과 코드를 확인하세요. AI는 PC에서 실행됩니다."}</p>
+      <p>{role === "human" ? "대결방을 만들고 AI 표시 화면과 PC 봇에 연결 코드를 알려 주세요." : dual ? "연결할 인간 화면의 구역과 코드를 확인하세요. AI는 PC에서 실행됩니다." : "인간 화면의 연결 코드를 입력하세요. AI는 PC에서 실행됩니다."}</p>
       {laneSelector}
-      {role === "bot" && <form onSubmit={event => { event.preventDefault(); void act("join"); }}><div className="field"><label htmlFor="pair-code">{remoteMode ? `${lane} 구역 · ` : ""}8자리 연결 코드</label><input id="pair-code" className="input code-input" value={code} onChange={event => setCode(event.target.value.replace(/[^a-z0-9]/gi, "").slice(0, 8))} maxLength={8} autoComplete="off" spellCheck={false} placeholder="ABCD2345" required /></div><button className="btn primary block" disabled={!!busy || code.trim().length !== 8}>{busy === "join" ? <LoaderCircle className="spinner" size={16} /> : <Link2 size={16} />}{remoteMode ? `${lane} 구역 표시 연결` : "대결 연결하기"}</button></form>}
-      {role === "human" && <button className="btn primary block" onClick={() => void act("create")} disabled={!!busy}>{busy === "create" ? <LoaderCircle className="spinner" size={16} /> : <Flag size={16} />}{remoteMode ? `${lane} 구역 새 대결 만들기` : "새 대결 만들기"}<ArrowRight size={15} /></button>}
+      {role === "bot" && <form onSubmit={event => { event.preventDefault(); void act("join"); }}><div className="field"><label htmlFor="pair-code">{remoteMode && dual ? `${lane} 구역 · ` : ""}8자리 연결 코드</label><input id="pair-code" className="input code-input" value={code} onChange={event => setCode(event.target.value.replace(/[^a-z0-9]/gi, "").slice(0, 8))} maxLength={8} autoComplete="off" spellCheck={false} placeholder="ABCD2345" required /></div><button className="btn primary block" disabled={!!busy || !operatingMode || code.trim().length !== 8}>{busy === "join" ? <LoaderCircle className="spinner" size={16} /> : <Link2 size={16} />}{remoteMode ? dual ? `${lane} 구역 표시 연결` : "AI 표시 연결" : "대결 연결하기"}</button></form>}
+      {role === "human" && <button className="btn primary block" onClick={() => void act("create")} disabled={!!busy || !operatingMode}>{busy === "create" ? <LoaderCircle className="spinner" size={16} /> : <Flag size={16} />}{remoteMode && dual ? `${lane} 구역 새 대결 만들기` : "새 대결 만들기"}<ArrowRight size={15} /></button>}
       <p className="status-note">사진 문제은행이 준비되어 있어야 시작할 수 있어요.</p>
     </> : state?.phase === "result" ? <>
       <p>{remote ? "한 참가자의 대결이 끝났습니다. 다음 참가자를 준비해도 이 방의 코드와 AI 연결은 그대로 유지됩니다." : "한 참가자의 대결이 끝났습니다. 새 참가자는 새 대결방에서 시작하며 AI도 새 코드로 다시 연결해야 합니다."}</p>
       {role === "human" ? <button className="btn primary block" disabled={!!busy || !!remote && !connected} onClick={() => void act(nextParticipantAction)}>{busy === nextParticipantAction ? <LoaderCircle className="spinner" size={16} /> : <UsersRound size={16} />}{nextParticipantLabel}</button> : remote ? <p className="status-note" role="status">다음 참가자 대기 · 연결 유지</p> : <button className="btn primary block" disabled={!!busy} onClick={leave}><Link2 size={16} />새 코드로 연결하기</button>}
       <p className="status-note">{remote ? "인간 화면에서 다음 참가자를 준비하고, PC 봇 준비가 끝나면 다시 시작하세요." : "이 대결방에서 다음 문제를 시작하지 않습니다."}</p>
     </> : <>
-      <p>{remote ? `${remote.lane} 구역 AI 표시 화면과 PC 봇은 처음 한 번 같은 코드로 연결하세요. 참가자가 바뀌어도 방과 연결은 유지됩니다.` : "봇을 실행할 PC와 연결 코드를 공유하세요."}</p>
+      <p>{remote ? `${dual ? `${remote.lane} 구역 ` : ""}AI 표시 화면과 PC 봇은 처음 한 번 같은 코드로 연결하세요. 참가자가 바뀌어도 방과 연결은 유지됩니다.` : "봇을 실행할 PC와 연결 코드를 공유하세요."}</p>
       <div className="room-code" aria-label={`연결 코드 ${roomCode}`}>{roomCode}</div>
       <button className="btn small block" onClick={async () => { try { await navigator.clipboard.writeText(roomCode); setCopied(true); window.setTimeout(() => setCopied(false), 1500); } catch { setError("연결 코드를 직접 입력해 주세요."); } }}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "코드를 복사했어요" : "연결 코드 복사"}</button>
       <div style={{ marginTop: 13 }}><div className="connection-row"><span>인간 플레이어</span><span className="connected"><CheckCheck size={12} />방 생성 완료</span></div>{remote ? <><div className="connection-row"><span>AI 표시 화면</span><span className={remote.viewerConnected ? "connected" : "waiting"}>{remote.viewerConnected ? <><CheckCheck size={12} />연결 등록됨</> : "코드 연결 대기"}</span></div><div className="connection-row"><span>PC 봇</span><span className={remote.engineConnected && remote.engineStage !== "error" ? "connected" : "waiting"}>{connected ? engineStatus(remote, state?.bot) : "연결 확인 중"}</span></div></> : <div className="connection-row"><span>봇 화면</span><span className={state?.bot.ready ? "connected" : "waiting"}>{state?.bot.ready ? <><CheckCheck size={12} />화면 준비됨</> : "화면 준비 대기"}</span></div>}</div>
@@ -417,7 +454,7 @@ export default function Arena() {
   return <div className={`${role === "bot" ? "bot-mode" : "human-mode"} ${remoteMode ? "remote-mode" : "legacy-mode"} ${!session || state?.phase === "lobby" ? "match-lobby" : "match-live"}`}>
     <BrandHeader role={role} />
     <main className="arena-page">
-      {remoteMode && <div className="lane-ribbon"><span className="lane-mark">{lane}</span><div><strong>{lane} 구역 · {role === "human" ? "인간 화면" : "AI 표시 화면"}</strong><span>{session ? `연결 코드 ${roomCode}` : "같은 구역끼리 연결하세요"}</span></div>{session && <span className={`connection-pill${connected ? " online" : ""}`}>{connected ? "대결 연결됨" : "연결 확인 중"}</span>}</div>}
+      {remoteMode && <div className="lane-ribbon"><span className="lane-mark">{dual ? lane : role === "human" ? "H" : "AI"}</span><div><strong>{dual ? `${lane} 구역 · ` : ""}{role === "human" ? "인간 화면" : "AI 표시 화면"}</strong><span>{session ? `연결 코드 ${roomCode}` : dual ? "같은 구역끼리 연결하세요" : "한 대결방에서 함께 시작하세요"}</span></div>{session && <span className={`connection-pill${connected ? " online" : ""}`}>{connected ? "대결 연결됨" : "연결 확인 중"}</span>}</div>}
       <div className="intro-row"><div className="intro-copy"><div className="eyebrow">Songnae High School · Alpha Club</div><h1>누가 더 빠르게 <em>알아볼까?</em></h1><p>당신의 직감과 AI의 눈. 같은 사진 위에서 만나는 한판 승부.</p></div><div className="round-chip"><span className="icon-box"><Sparkles size={18} /></span><div>HUMAN vs AI<small>사진으로 겨루는 관찰력 대결</small></div></div></div>
       <div className="arena-workspace">
         <div className="match-column">
@@ -438,7 +475,7 @@ export default function Arena() {
                 : waitingForStart ? <div className="grid-mask" role="status"><LoaderCircle className="spinner" size={30} /><strong>{loadingImages ? "양쪽 화면의 사진을 준비 중" : "AI 출발 준비 중"}</strong><p>{loadingImages ? `인간 화면 ${state?.imageLoad?.humanReady ? "완료" : "준비 중"} · AI 화면 ${state?.imageLoad?.botReady ? "완료" : "준비 중"} · PC 봇 ${state?.imageLoad?.engineReady ? "완료" : "준비 중"}. 모두 준비되면 함께 출발합니다.` : "GPU 차례를 기다리고 있어요. 아직 문제와 사진은 공개되지 않고 타이머도 흐르지 않습니다."}</p>{role === "human" ? <button id="cancel-start" className="btn primary" disabled={!!busy || !connected} onClick={() => void act("cancel-start")}>{busy === "cancel-start" ? <LoaderCircle className="spinner" size={14} /> : <X size={14} />}출발 대기 취소</button> : <p>인간 화면에서 대기를 취소할 수 있습니다.</p>}</div>
                 : imageError && state?.phase !== "result" ? <div className="grid-mask"><span className="mask-icon"><ImageIcon size={25} /></span><strong>사진을 불러오지 못했어요</strong><p>사진이 준비되어 있는지 관리자에게 확인해 주세요. 불완전한 문제는 제출할 수 없습니다.</p></div>
                 : countdown ? <div className="grid-mask"><span className="eyebrow">모두 같은 순간에 출발!</span><strong className="countdown-number">{Math.max(1, Math.ceil(((state?.startAt || 0) - serverNow) / 1000))}</strong><p>{imagesReady ? "잠시 후 대결이 시작됩니다." : "문제 사진을 불러오고 있어요."}</p></div>
-                : state?.phase === "lobby" ? <div className="grid-mask"><span className="mask-icon"><Link2 size={25} strokeWidth={1.5} /></span><strong>{remote ? canStart ? `${lane} 구역 출발 준비 완료` : needsEngineUpdate ? "PC 봇 업데이트 필요" : `${lane} 구역 연결 대기` : state.bot.ready ? "두 화면 연결 완료" : "상대와 연결하고 있어요"}</strong><p>{remote ? needsEngineUpdate ? "PC 봇 실행기를 최신 버전으로 업데이트하고 재시작해 주세요." : role === "human" ? "AI 표시 화면과 PC 봇을 연결한 뒤 시작하세요. 출발 준비가 끝나면 함께 시작합니다." : "인간 화면의 시작 요청 후 PC 봇의 출발 준비가 끝나면 함께 시작합니다." : role === "human" ? "PC 봇을 실행한 뒤 대결 시작 버튼을 눌러 주세요." : "PC 봇 프로그램을 실행하고 화면 준비를 알려 주세요."}</p>{role === "bot" && !remote && !state.bot.ready && <button className="btn primary" disabled={!!busy || !connected} onClick={() => void act("ready")}>{busy === "ready" ? <LoaderCircle className="spinner" size={15} /> : <Check size={15} />}봇 화면 준비</button>}</div>
+                : state?.phase === "lobby" ? <div className="grid-mask"><span className="mask-icon"><Link2 size={25} strokeWidth={1.5} /></span><strong>{remote ? canStart ? `${dual ? `${lane} 구역 ` : ""}출발 준비 완료` : needsEngineUpdate ? "PC 봇 업데이트 필요" : `${dual ? `${lane} 구역 ` : ""}연결 대기` : state.bot.ready ? "두 화면 연결 완료" : "상대와 연결하고 있어요"}</strong><p>{remote ? needsEngineUpdate ? "PC 봇 실행기를 최신 버전으로 업데이트하고 재시작해 주세요." : role === "human" ? "AI 표시 화면과 PC 봇을 연결한 뒤 시작하세요. 출발 준비가 끝나면 함께 시작합니다." : "인간 화면의 시작 요청 후 PC 봇의 출발 준비가 끝나면 함께 시작합니다." : role === "human" ? "PC 봇을 실행한 뒤 대결 시작 버튼을 눌러 주세요." : "PC 봇 프로그램을 실행하고 화면 준비를 알려 주세요."}</p>{role === "bot" && !remote && !state.bot.ready && <button className="btn primary" disabled={!!busy || !connected} onClick={() => void act("ready")}>{busy === "ready" ? <LoaderCircle className="spinner" size={15} /> : <Check size={15} />}봇 화면 준비</button>}</div>
                 : state?.phase === "result" ? <div className="grid-mask"><span className="mask-icon"><Trophy size={27} strokeWidth={1.5} /></span><strong>{resultTitle}</strong><p>{winner === role ? "완벽한 정답을 먼저 제출해 승리했어요." : winner ? "상대가 먼저 완벽한 정답을 제출해 대결이 끝났어요." : "제한 시간 안에 완벽한 정답이 나오지 않았어요."}</p>{role === "human" ? <button id="next-participant" className="btn primary" disabled={!!busy || !!remote && !connected} onClick={() => void act(nextParticipantAction)}>{busy === nextParticipantAction ? <LoaderCircle className="spinner" size={14} /> : <UsersRound size={14} />}{nextParticipantLabel}</button> : remote ? <><strong style={{ fontSize: 16 }}>다음 참가자 대기 · 연결 유지</strong><p>인간 화면에서 다음 참가자를 준비하면 같은 방에서 다시 대기합니다.</p></> : <><p>새 참가자의 연결 코드로 다시 연결해 주세요.</p><button className="btn primary" disabled={!!busy} onClick={leave}><Link2 size={14} />새 코드로 연결하기</button></>}</div>
                 : !imagesReady ? <div className="grid-mask"><LoaderCircle className="spinner" size={28} /><strong>{tiles.length === 9 ? "사진을 불러오고 있어요" : "문제 사진 준비 중"}</strong><p>{viewer ? "사진 9장을 불러온 뒤 AI의 선택을 보여줍니다." : "사진 9장이 모두 준비된 뒤 선택할 수 있어요."}</p></div>
                 : deadlineReached ? <div className="grid-mask"><Clock3 size={28} /><strong>시간이 종료되었어요</strong><p>서버에서 대결 결과를 확인하고 있어요.</p></div> : null}

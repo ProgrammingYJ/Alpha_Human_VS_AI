@@ -1,6 +1,25 @@
 # 아키텍처
 
-최종 검토: 2026-11-05 (Asia/Pyongyang)
+최종 검토: 2026-11-06 (Asia/Pyongyang)
+
+## 단일 대결과 PC 자원 예산 (2026-11-06 현재 운영)
+
+11/06 사용자가 내일11/07 행사에는 한 구역만 운영하고 CTF/Codex와 PC를 함께 사용하도록 요청했다. 이 요구가11/05 A/B 병렬 기본 운영을 대체한다. 일반 화면은 [인간](https://human.marulee.dev/)과 [AI 표시](https://bot.marulee.dev/) 두 역할만 사용한다. 기존 방/토큰 호환을 위해 내부 lane A는 유지하지만 UI의 A/B 선택은 없앤다. 서버 `ARENA_OPERATION_MODE=single`은 remote 생성 시 lane 생략을 A로 해석하고 B 생성/참가는409 `lane_disabled`, 기존 B 방의 조회·행동·사진은410으로 차단한다. 잘못된 운영 모드는503으로 중단한다. 과거 방·사진을 삭제하거나 reset 경계 `1793862306432`를 줄이지 않는다.
+
+운영 CLI와 `Start-Alpha-Remote.cmd` 기본값은 `--inference-mode single --gpu-duty-cycle 0.30 --cpu-threads 4`다. 모델 가중치 한 벌·worker1개·CUDA stream1개를 사용하고 B 입력은 거부한다. 코드는 최초에8자리만 숨겨 입력하며 `A CODE8`도 호환한다. `SharedModels`를 직접 호출하는 기존 API의 `execution_mode="parallel", gpu_duty_cycle=1.0` 기본값은 호환용으로 남고 CLI가 현재 운영 설정을 명시적으로 주입한다. 두 구역을 복원하려면 서버 `ARENA_OPERATION_MODE=dual`과 PC `--inference-mode parallel --gpu-duty-cycle 1`을 함께 지정한다. parallel에1 미만의 예산을 주면 작업별 예산을 전체30%로 오인하지 않도록 시작을 거부한다.
+
+`resource_budget.CooperativePacer`는 기존 모델 배치(존재8+1장·사람9장·나무1장씩9회)의 실제 호출 전후에 해당 CUDA stream을 동기화하고 완료까지의 벽시계 시간 `work`를 측정한다. 같은 RGB·전처리·가중치·임계값으로 처리한 뒤 `work × (1/0.30−1)`만큼 쉰다. 마지막 모델 호출 뒤에도 대기하며 이전 유휴 시간의 사용 권한을 적립하지 않는다. 최대50ms 수면 조각 사이에 로컬 취소 상태를 확인하고 이 확인을 위해 HTTP를 추가하지 않는다. 실패한 호출도 finally 동기화한 뒤 즉시 전파하며 실패/취소 후 재시도나 강제 대기를 하지 않는다. 한 CUDA 호출 내부의 커널을 잘라 중단하는 방식은 아니다.
+
+이30%는 전처리·후처리와 GPU 완료를 포함한 **협력적 모델 호출 시간 예산**이다. SM30% 고정 분할·순간 GPU 사용률30%·다른 앱의70% 예약·VRAM30% 상한을 보장하지 않는다. [`set_per_process_memory_fraction`](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.set_per_process_memory_fraction.html)은 캐싱 할당기 메모리 한도로 계산 예산과 다르므로 적용하지 않는다. RTX4070 Laptop은 [MIG 지원 목록](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/supported-gpus.html)에 없고 [MPS 지원 OS](https://docs.nvidia.com/deploy/mps/when-to-use-mps.html)는 Linux/QNX다. 설치된 PyTorch Green Context 소스도 Windows를 거부한다. GPU 전력·클럭·드라이버나 다른 프로그램의 설정은 바꾸지 않는다.
+
+실행기는 모델 로드 전에 자기 프로세스의 OMP/MKL·PyTorch intraop 스레드를4개, interop을1개로 제한하고 Windows BelowNormal 우선순위를 요청해 적용 결과를 기록한다. 이것은 PC 전체 CPU 사용률 상한이 아니다. 시작 메타데이터의 `inference_mode=single`, `max_concurrent_inferences=1`, `cuda_stream_count=1`, `target_gpu_duty_cycle=0.3`, `hardware_gpu_quota_enforced=false`, `memory_allocator_limit_fraction=null`을 확인한다. 라운드 보고서에는 `inference_work_seconds`, 실제/예정 `resource_throttle_seconds`/`resource_throttle_planned_seconds`, `resource_work_fraction_observed`, `inference_chunk_count`, `quota_kind=cooperative_model_call_time`을 분리한다. 장치 전체의 nvidia-smi 표본과 이 비율은 같은 지표가 아니다.
+
+프로토콜3 사진 준비·공통 출발 뒤 실제 추론·같은 방 다음 참가자·500ms 전달 여유/250ms 선택은 유지한다. 자원 대기는 사용자 요청에 따른 명시적 예산이며 모델 예측을 바꾸거나 임의 오답을 넣지 않는다. 기존 배치를 보존한 출력 비교·CUDA 시간/VRAM·공개 게시·현재 PC 생존과 CTF 동시 부하의 확인 범위는 STATUS/CHANGELOG가 정본이다. 과거 두 stream 수치는 현재 단일30% 성능의 측정값으로 쓰지 않는다. 첫 모든 모델 타일1장 후보는 존재 점수 차이로 사전 허용오차를 통과하지 못해 보존했고, 허용오차를 늘리지 않고 원래 배치를 유지하는 방식으로 수정했다. 최종 v2는 원래 배치를 보존한 뒤 같은12회에서 점수 최대차이0·선택 동일·OOM0을 확인했다. 이 결과를 독립 정확도나 미측정 행사장 성능으로 확대하지 않는다. 학교 미사용·40% 목표/ONNX/Pi/legacy OS 입력 미완료는 유지한다.
+
+
+11/06 단일 예산 검증: `runs/single-resource-20261106/cuda-budget-v2.json`에서 고정 공개 RGB의4조건을 각각3회 실행해 원래 배치/무제한 대비 점수 최대차이0·선택 동일·OOM0, single1worker/1stream을 확인했다.30% 설정의 모델 작업/(작업+실제 자원 대기) 최대는0.29999102였다. 이 PC에서의 전체 추론 중앙값은 건물0.2328305초·연못0.2363474초·사람1.0925515초·나무4.7188933초이며 HTTP/준비/선택 재생은 별도다. 관측 PyTorch 최대 할당1075.72MiB·예약1154MiB는 이 표본의 값이다. 첫 모든 모델 타일1장 후보의 미통과 보고서는 보존하고 허용오차를 완화하지 않았다.
+
+별도 나무 Kineto는22,519개 kernel의 활성 구간 합집합0.7297766초/벽시계3.8687644초=18.8633%를 기록했다. 같은 프로파일의 CPU 전후처리 포함 작업 비율은29.9749%이며 프로파일 오버헤드를 위 속도 중앙값에 섞지 않는다. 다른 앱과 무제한 기준 실행이 섞인 장치 전체273표본 평균23.7729%·순간 최대80%와 메모리2125MiB는 프로세스30% 상한 측정이 아니다. CPU4/interop1·BelowNormal 적용값16384를 확인했고 다른 프로세스 설정은 바꾸지 않았다. 새 게시·최신 PID/생존과 현장 CTF 동시 부하는 STATUS의 후속 검증 범위를 따른다.
 
 ## 운영 세션의 생성시각 경계와 논리적 철회 (2026-11-05)
 
@@ -10,15 +29,15 @@ PC 재시작은 메모리의 engine 권한을 잃지만 D1의 `bot_token_hash`/`
 
 UI는 현재 요청의 연결 세대·roomId·storageKey가 일치하는 초기화/만료410만 받아 해당 세션과 선택/사진/시계를 비운다. `?reset=1`은 현재 origin/탭의 remote 인간/봇 A/B 네 키를 값 열람 없이 제거하고 URL의 reset/fragment를 남기지 않는다. 옛 성공/실패 응답이 새 연결을 덮지 못한다. 이 수동 브라우저 초기화만으로 서버 방이 철회되는 것은 아니다. 전역 init 후에는 새 방에 viewer/engine을 처음부터 연결하고 정상 next는 같은 권한을 유지한다.
 
-이번 작업 검토: 운영 init — 2026-11-05 전체 구조·권한/저장소·입력/학습 경계와 과거 이력을 재독하고 논리적 철회·사진 우회 차단·브라우저 비동기 격리를 반영했다. parallel2슬롯/2stream·protocol3·500ms/250ms·RGB 전용 ML/고정 모델/학교 정책은 유지한다. 실제 검사·게시·PC 생존/남은 현장 검증은 STATUS/CHANGELOG가 정본이다.
+이전 작업 검토(운영 init): 2026-11-05 전체 구조·권한/저장소·입력/학습 경계와 과거 이력을 재독하고 논리적 철회·사진 우회 차단·브라우저 비동기 격리를 반영했다. parallel2슬롯/2stream·protocol3·500ms/250ms·RGB 전용 ML/고정 모델/학교 정책은 유지한다. 실제 검사·게시·PC 생존/남은 현장 검증은 STATUS/CHANGELOG가 정본이다.
 
-## A/B 병렬 추론 운영 구조 (2026-11-05)
+## 이전 A/B 병렬 추론 운영 구조 (2026-11-05 이력)
 
-사용자의 A/B 실제 병렬 추론 요청으로 이전 단일 FIFO 운영 기본값을 대체했다. 원격 실행기 하나가 존재·사람·나무 가중치 한 벌을 공유하며 `SharedModels(..., execution_mode="parallel")`의 독립 작업 슬롯2개와 CUDA stream2개를 사용한다. A/B는 각자 슬롯을 확보해 사진 준비·카운트다운·출발 뒤 추론을 진행하므로 한 레인이 다른 레인의 준비/추론 완료를 기다리는 단일 큐를 사용하지 않는다. 각 방의 인간/AI 공통 출발은 유지하며 서로 다른 방의 절대 출발 시각을 강제로 맞추지 않는다.
+11/05 사용자의 A/B 실제 병렬 추론 요청으로 당시 단일 FIFO 운영 기본값을 대체했다. 이 단락과 뒤 측정값은11/05 이력이며11/06 단일 구역·30% 시간 예산이 현재 운영 기본값이다. 원격 실행기 하나가 존재·사람·나무 가중치 한 벌을 공유하며 `SharedModels(..., execution_mode="parallel")`의 독립 작업 슬롯2개와 CUDA stream2개를 사용한다. A/B는 각자 슬롯을 확보해 사진 준비·카운트다운·출발 뒤 추론을 진행하므로 한 레인이 다른 레인의 준비/추론 완료를 기다리는 단일 큐를 사용하지 않는다. 각 방의 인간/AI 공통 출발은 유지하며 서로 다른 방의 절대 출발 시각을 강제로 맞추지 않는다.
 
 각 작업은 `fork_for_inference()`(`fork_for_worker()` 별칭)로 만든 predictor 문맥을 사용한다. 두 제한 모델과 나무 모델의 가중치는 동일 객체이고, 나무 processor/tokenizer·`last_detections`와 메타데이터는 작업별로 분리한다. fork는 모델의 eval·장치 준비 상태를 확인하고 병렬 예측 중 `model.to()`·`eval()`을 반복하지 않는다. 작업 스레드는 자기 CUDA stream과 `torch.inference_mode()` 안에서 실행하고 자기 stream 완료만 동기화한 뒤 결과를 반환한다. 합성 RGB 예열은 방 연결 전에 두 문맥 모두 수행한다.
 
-기본 실행은 `Start-Alpha-Remote.cmd`이며 명시적 직렬 복구는 `Start-Alpha-Remote.cmd -InferenceMode serial`, Python 직접 실행은 `--inference-mode parallel|serial`이다. `serial`은1슬롯 FIFO로 복구하며 실행기를 레인마다 두 개 켜지 않는다. 시작/라운드 보고서의 `inference_mode`, `max_concurrent_inferences`, `cuda_stream_count`, `model_weights_shared`로 실제 설정을 확인한다. 50:50 하드웨어 할당이나 모든 주제의 속도 향상·통신/화면 지연0을 보장하지 않는다. 최신 CUDA 출력/시간/VRAM 검증과 운영 프로세스는 STATUS가 정본이다.
+11/05 당시 기본 실행은 `Start-Alpha-Remote.cmd`였으며 당시 명시적 직렬 복구는 `Start-Alpha-Remote.cmd -InferenceMode serial`, Python 직접 실행은 `--inference-mode parallel|serial`이다. `serial`은1슬롯 FIFO로 복구하며 실행기를 레인마다 두 개 켜지 않는다. 시작/라운드 보고서의 `inference_mode`, `max_concurrent_inferences`, `cuda_stream_count`, `model_weights_shared`로 실제 설정을 확인한다. 50:50 하드웨어 할당이나 모든 주제의 속도 향상·통신/화면 지연0을 보장하지 않는다. 최신 CUDA 출력/시간/VRAM 검증과 운영 프로세스는 STATUS가 정본이다.
 
 프로토콜3·각 방의 세 역할9사진 준비·출발 전 문제 추론 금지·같은 방 다음 참가자·500ms 전달 여유/250ms 선택 계획은 유지한다. 취소·만료·오류는 해당 슬롯과 라운드에 한정하고 다른 레인의 작업을 해제하거나 중단하지 않는다. 가중치·전처리·임계값·학교 미사용·임의 오답 금지와40%/ONNX/Pi/legacy OS 입력 미완료도 유지한다.
 
@@ -28,7 +47,7 @@ UI는 현재 요청의 연결 세대·roomId·storageKey가 일치하는 초기�
 
 ## 외부 컴퓨터 접속과 병렬 수정 전 준비 이력 (2026-11-05)
 
-외부 인간/AI 표시 컴퓨터는 공개 `human.marulee.dev`·`bot.marulee.dev`의 HTTPS를 사용한다. Worker·D1·R2와 모델 PC의 outbound HTTPS가 연결을 중계하며 외부 브라우저가 PC의 로컬IP/포트5186으로 접속하지 않는다. 표시 기기에는 Python/ML 설치가 필요 없다. A/B 코드·상태는 레인별로 분리하고 모델 PC의 콘솔 하나·공유 가중치 한 벌·parallel 작업 슬롯2개를 사용한다. 구체적인 네 주소와 최초 연결/같은 방 다음 참가자 절차는 [SETUP.md](SETUP.md)를 따른다.
+외부 인간/AI 표시 컴퓨터는 공개 `human.marulee.dev`·`bot.marulee.dev`의 HTTPS를 사용한다. Worker·D1·R2와 모델 PC의 outbound HTTPS가 연결을 중계하며 외부 브라우저가 PC의 로컬IP/포트5186으로 접속하지 않는다. 표시 기기에는 Python/ML 설치가 필요 없다. 현재11/06 기본은 인간/AI 표시 한 쌍·PC 콘솔 하나·공유 가중치 한 벌·single1슬롯과30% 협력적 시간 예산이다. 최초 연결/같은 방 다음 참가자 절차는 [SETUP.md](SETUP.md)를 따른다. 아래 공개6요청·병렬2슬롯 기록은11/05 당시의 준비 이력이다.
 
 11/05 병렬 수정 전 준비 검사에서 기존 공개 v13의 인간/봇 A/B 페이지와 두 health endpoint 총6요청 HTTP200·프로토콜3·배리어·250ms를 확인했다. 당시 CUDA3모델 로드15.046초·합성 예열3.657초 후 코드 입력 대기까지 확인했으며 문제 RGB 추론은0회였다. 이는 이전 FIFO 실행기의 준비 기록이며 최신 병렬 엔진의 속도/가동 근거가 아니다. 실제 프로세스·후속 병렬 검증은 [STATUS.md](STATUS.md)를 따른다.
 
@@ -65,7 +84,7 @@ UI는 현재 요청의 연결 세대·roomId·storageKey가 일치하는 초기�
 
 ## 이전 GPU 동시 추론과 자원 분할 검토 (2026-11-02 이력)
 
-11/02 검토 당시 운영의 `SharedModels`와 FIFO 예약은 유지했다. 당시 예약은 `begin`·사진 준비·카운트다운·모델 반환까지 보유했다. CUDA stream은 GPU에 독립 작업을 제출하는 방식이며 자원이 남으면 연산이 겹칠 수 있으나 이미 계산 자원을 채운 작업끼리는 경합해 느려질 수 있다. CPU 호출 구간의 겹침만으로 CUDA 커널의 동시 실행을 판정하지 않는다. [NVIDIA CUDA 비동기 실행 설명](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html) 아래 결과는 후보 실험 이력이며 현재 기본 모드는 상단11/05 설명을 따른다.
+11/02 검토 당시 운영의 `SharedModels`와 FIFO 예약은 유지했다. 당시 예약은 `begin`·사진 준비·카운트다운·모델 반환까지 보유했다. CUDA stream은 GPU에 독립 작업을 제출하는 방식이며 자원이 남으면 연산이 겹칠 수 있으나 이미 계산 자원을 채운 작업끼리는 경합해 느려질 수 있다. CPU 호출 구간의 겹침만으로 CUDA 커널의 동시 실행을 판정하지 않는다. [NVIDIA CUDA 비동기 실행 설명](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html) 아래 결과는 후보 실험 이력이며 현재 기본 모드는 상단11/06 단일 운영 설명을 따른다.
 
 이 PC의 RTX 4070 Laptop은 [NVIDIA MIG 지원 GPU 목록](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/supported-gpus.html)에 없다. `torch.cuda.memory.set_per_process_memory_fraction`은 프로세스별 캐싱 할당기의 메모리 한도이며 계산 자원의 50:50 예약이 아니다. [PyTorch 메모리 한도 API](https://docs.pytorch.org/docs/2.14/generated/torch.cuda.memory.set_per_process_memory_fraction.html) 현재 설치된 `.venv/Lib/site-packages/torch/cuda/green_contexts.py`의 `_ensure_supported()`는 Windows에서 거부하고 CUDA 사용자 모드 드라이버 12.8 이상을 요구한다. 따라서 이 설치 환경의 해당 경로로 SM 분할을 적용할 수 있다고 가정하지 않는다. 모든 GPU·운영체제에서 소프트웨어 자원 분할이 불가능하다는 일반 결론으로 확대하지 않는다.
 
@@ -117,9 +136,10 @@ Python 기본 통신은 origin에 묶인 표준 http.client의 HTTP/1.1 연결�
 | `tasks.py` | 9개 예측에 공개 조건과 고정 임계값을 적용. 사람 수 조건은 명시적 `eq`/`gte`, n=2~5를 검사하고 필요한 예측이 unknown이면 오류로 중단 |
 | `timing.py` | 단조 시계·주입 가능한 시계/대기로 타일 콜백을 제한하고 취소·문제 교체를 처리. 모의 콜백으로만 검증했으며 OS 클릭 간격은 미측정 |
 | `booth_bot.py`, `run_booth_bot.py` | 전면 봇 창 확인·화면 RGB 9타일 추론·물리 좌표·최소0.25초 클릭/제출 코드. dry-run 기본·execute 명시·문제/포커스 변경 중단. 합성 테스트만, 실제 OS 실행 0 |
-| `remote_engine.py`, `run_remote_engine.py` | PC의 고정 모델을 공유하고 공개 RGB·조건만 추론.9사진 최대3병렬/원순서 보존 뒤 지원 서버에는 불변 선택 계획1회 전송, 미지원은 개별 선택/제출 호환. 계획 예정 시각과 실제 전송 기록을 분리 |
+| `remote_engine.py`, `run_remote_engine.py` | PC의 고정 모델과 공개 RGB·조건만 사용. 운영 기본single1worker/1stream·원래 배치의 호출·30% 시간 예산·CPU4.9사진 최대3병렬/원순서 보존 뒤 불변 선택 계획1회 전송, 미지원은 개별 선택/제출 호환. 직접API parallel/1.0 기본값과 CLI 설정을 구분 |
+| `resource_budget.py` | 호출 완료 동기화·작업 시간 측정·마지막 청크까지 협력적 대기·50ms 이하 로컬 취소 확인. 작업/실제·예정 대기/관측 비율을 별도 기록하며 하드웨어/VRAM 상한은 설정하지 않음 |
 | `server/remote.mjs`, `arena_remote_rooms` | 엔진·뷰어 분리, 레인·15초 생존·서버0.25초 선택·sequence/선택 snapshot CAS.0001의 원격 테이블과0002의protocol 열, 기존 OS 경로 보존 |
-| `server/gpu-start.mjs` | queued 무round 시작 요청·expectedRevision/requestId CAS·begin 원자 출제·취소/생존 만료/오류 회복. 작업 슬롯은 PC 엔진이 확보하며 기본 parallel2개, 명시적 serial은1개 FIFO |
+| `server/gpu-start.mjs`, `server/operation-mode.mjs` | queued 무round 시작 요청·expectedRevision/requestId CAS·begin 원자 출제·취소/생존 만료/오류 회복. 현재 서버single은 B를 차단하고 운영 PC는1슬롯. dual/parallel2슬롯은 양쪽에 명시하는 복구 모드 |
 | `server/state-projection.mjs` | D1 remote 행을 읽은 뒤 같은 시각으로 공개 serverNow·생존·준비를 계산. 최초 heartbeat 수신 여부와15초 생존 판정을 분리 |
 | `web/alpha-arena` | 운영자 문제은행, 사람/봇 역할 대기실, 서버 공통 시작·채점·승패와 D1/R2 저장 구현. 배포/실제 두 기기 검증 범위는 STATUS 참고 |
 | ONNX/Pi | ONNX 내보내기·출력 동등성·Pi 성능/GUI 검증은 남음 |
@@ -220,11 +240,11 @@ CSS의 600×600·gap 8 격자와 OS 물리 좌표는 다르므로 브라우저 �
 
 앞선 봇 테스트 **15개**로 dry-run 무입력, RGB-only 전달, 간격·변경 중단·공개 상태 추출·나무 모델 lazy 연결·0타일 선택 시 제출 기록과 최신 한 판/동일 question 재시도 차단·상대 승리 중단을 검사했다. 마지막1개는 HTTP 식별 헤더와 토큰 전달 범위를 검사한다. 공개 서버에서 Python 기본UA403을 관측해 `AlphaCaptchaBoothBot/1.0`을 명시했으며 실제 PublicRoomSession의 bot호스트 참가·상태조회도 통과했다. 이 연결 검사에서는 준비·사진·관리·제출을 호출하지 않았고 결과에는 토큰/방신원을 저장하지 않았다. 이 테스트는 OS 클릭·실제 GUI 포커스·두 기기 동시 대결의 증거가 아니다. 이전 URL 확인 실패로 중단한 화면 시험을 이번 브라우저 연결 확인과 구분하며, 저장 이미지의 ML 실행·UI/API 검사·공개 사진 적용을 ML 봇의 실제 화면 입력 성공으로 합치지 않는다.
 
-## 컴퓨터 브라우저·A/B 두 레인 원격 경로 (10/27 후속 변경)
+## 컴퓨터 브라우저 원격 경로 (10/27 구현·11/06 단일 운영)
 
-사용자가 원격 선택·HTTP 엔진 제출을 승인해 `remote` 모드를 추가했다. 인간·봇 표시는 후속 요청에 따라 컴퓨터 브라우저로 옮기며 이 원격 경로를 유지한다. 인간 화면은 `{mode:'remote',lane:'A'|'B'}`로 독립 방을 만들고, 봇 화면은 기존 bot 참가를 읽기 전용 viewer로 사용한다. PC는 별도 engine 참가 토큰으로 연결한다. 두 참가의 순서는 자유롭고 역할별 중복 참가·레인 불일치를 각각 거부한다. `{}`로 만드는 기존 방은 legacy 계약을 유지한다. 원격 선택은 OS 전면창·공유 커서에 의존하지 않는다.
+사용자가 원격 선택·HTTP 엔진 제출을 승인해 `remote` 모드를 추가했다. 인간·봇 표시는 컴퓨터 브라우저에서 이 원격 경로를 유지한다. 현재single의 인간 화면은 `{mode:'remote'}`로 방을 만들며 서버가 내부 A를 채운다. 명시적인 A도 호환하고 B는 차단한다. 봇은 읽기 전용 viewer, PC는 별도 engine 참가 토큰으로 연결한다. 두 참가의 순서는 자유롭고 역할별 중복 참가·레인 불일치를 각각 거부한다. `{}`로 만드는 기존 방은 legacy 계약을 유지한다. 원격 선택은 OS 전면창·공유 커서에 의존하지 않는다.
 
-이전 Android 태블릿4대 계획은 현재 운영 요구가 아니다. A/B별 인간1·읽기 전용 봇1의4개 화면 역할과 모델·CUDA·병렬 작업 슬롯을 이 PC가 담당하는 분리는 유지한다. 물리 컴퓨터 대수·각 OS/브라우저 버전·실제 화면 크기/배율·현장 성능은 확정하거나 실측하지 않았다.1024×768·768×1024·1280×800의 기존 viewport 검사는 브라우저 크기 시뮬레이션이며 Android 실물이나 새 컴퓨터 표시 환경 전체의 동작을 증명하지 않는다.
+이전 Android4대와 A/B4화면 계획은 현재 운영 요구가 아니다. 인간1·읽기 전용 AI 표시1의 두 화면과 PC ML1worker/1stream으로 운영한다. 물리 컴퓨터 대수·각 OS/브라우저 버전·실제 화면 크기/배율·현장 성능은 확정하거나 실측하지 않았다.1024×768·768×1024·1280×800의 기존 viewport 검사는 브라우저 크기 시뮬레이션이며 새 컴퓨터 표시 환경 전체의 동작을 증명하지 않는다.
 
 통신은 브라우저·PC 엔진 각각과 공개 서버 사이의 HTTPS API다. remote 봇은 진행 중 계획을 받기 전125ms로 조회하고, 유효한 계획 수신 뒤에는500ms 상태조회와 서버시계 기반 재생을 사용한다. 인간 화면·그 외 단계는500ms이며 진행 중 요청을 겹쳐 보내지 않는다. 최신 엔진은 약3초 heartbeat와 라운드별 선택 계획1회 업로드 후 상태 관측만 수행하며, 계획 미지원 서버에서만 개별 선택/제출을 사용한다. PC끼리 raw TCP로 직접 연결하는 경로·전용 지속 소켓은 구현하지 않았다. 이전 urllib 읽기 검사는 HTTP/1.1이었고 현재 Python은 표준 http.client로 HTTP/1.1 연결을 재사용하며, 브라우저의 실제 HTTP/2·HTTP/3 협상은 측정하지 않았다. 따라서 모든 클라이언트 통신을 TCP라고 단정하지 않는다. 방/코드/토큰이 지속되는 애플리케이션 세션과 전송 연결의 수명도 구분한다.
 
@@ -238,7 +258,7 @@ remote의 인간 전용 `POST /api/rooms/:id/next`는 종료 roundId를 받아 D
 
 새 heartbeat는 protocolVersion3와 관측 roundId/roundNumber/requestId(null|UUID)를 SQL CAS에 묶는다. ticket은 active/result까지 유지해 begin 응답유실의 동일 round 재전송을 ACK하고 next/cancel에서 비운다. queued는 waiting_gpu/reserved/error만, ready는 lobby만, result는 같은 round의 submitted/inferencing/error만 허용한다. 구 protocol1/no-ticket heartbeat는 기존 진행판 완료를 위해 호환하지만 새 queue 시작은 protocol_upgrade_required로 거부한다. 결과와 다음 참가자·공개 revision·이전 사진 차단은 유지한다.
 
-PC 엔진은 세 고정 모델을 한 번 불러 공유하며 방별 공개 질문과9개 사진을 받는다.9사진은 독립 공개 경로를 최대3개 병렬로 디코딩하고 `map`의 원순서로 모델에 전달한다. 실패 시 시작한 작업을 모두 정리하고 추론을 중단한다. 불투명 URL은 바이트 전송에만 사용하고 의미를 판정하지 않으며 모델에는 RGB와 일반 조건만 전달한다. 공유 가중치를 작업별 CUDA stream에서 추론하고 해당 stream 반환 직후 자기 슬롯을 해제한 뒤 실제 예측 번호만 계획으로 전송한다. 기능 지원 flag·서버 제출 결과·계획은 모델 입력이 아니다. 기존 개별 선택/제출은 계획 미지원 서버의 호환 경로로 보존하고 sequence/250ms·중복·회차/생존 CAS를 유지한다.
+PC 엔진은 세 고정 모델을 한 번 불러 공개 질문과9개 사진을 받는다.9사진은 독립 공개 경로를 최대3개 병렬로 디코딩하고 원순서를 보존한다. 실패 시 시작한 작업을 모두 정리하고 추론을 중단한다. 불투명 URL은 바이트 전송에만 사용하고 모델에는 RGB와 일반 조건만 전달한다. 현재single은 worker의 CUDA stream1개에서 기존 배치로 추론·호출별 자원 대기하고 마지막 대기까지 끝나면 슬롯을 해제한 뒤 실제 예측 번호만 계획으로 보낸다. 기능 지원 flag·서버 제출 결과·계획은 모델 입력이 아니다. 기존 개별 선택/제출은 계획 미지원 서버의 호환 경로로 보존하고 sequence/250ms·중복·회차/생존 CAS를 유지한다.
 
 ### 불변 선택 계획과 시간 기준
 
@@ -254,13 +274,13 @@ PC 보고서는 계획 업로드/ACK·`planned_selection_events`의 서버 예�
 
 이전v8의 GPU 잠금 대기는 startAt 뒤에 발생해 해당 AI와대결하는 참가자가 상대적으로 유리해질 수 있었다. 위 A1/B1은 그때의 상태조회 포함 샘플이며 순수 GPU 잠금 차이·현재 예약 방식의 성능·모든 경기의 공정성 보장으로 확대하지 않는다.
 
-후속 승인을 받아 시작 요청을 경기 전 GPU 예약 큐에 넣는 구조를 구현했다. queued는 roundId/startAt/deadline/topic=null·tiles=[]·타이머0이며 누적번호는 그대로다. PC가 실행 모드의 자기 슬롯을 확보한 후 인증된 begin(requestId,roundNumber)을 보낸다. 서버는 현재 ticket/준비/생존/프로토콜/revision을 쓰기에 다시 검사해 D1 batch에서 딱 한 round의 loading을 만들고 세 역할의 사진 준비를 확인한 뒤2초 공통 startAt을 확정한다. 사람·AI가 같은 시각에 시작한 뒤 공개 RGB를 추론하고 예약을 해제한다. 최소0.25초 선택은 다음 방 추론과 겹친다. 서버가 물리 GPU 잠금을 직접 조회하는 것은 아니므로 예약 획득 후 begin을 보내는 신뢰된 PC 엔진과 함께 검증한다. 사전 풀이·타이머 사후 보정·임의 지연은 없으며 최종 실제 GPU/HTTP/UI/배포 결과는 STATUS다.
+후속 승인을 받아 시작 요청을 경기 전 GPU 예약 큐에 넣는 구조를 구현했다. queued는 roundId/startAt/deadline/topic=null·tiles=[]·타이머0이며 누적번호는 그대로다. PC가 실행 모드의 자기 슬롯을 확보한 후 인증된 begin(requestId,roundNumber)을 보낸다. 서버는 현재 ticket/준비/생존/프로토콜/revision을 쓰기에 다시 검사해 D1 batch에서 딱 한 round의 loading을 만들고 세 역할의 사진 준비를 확인한 뒤2초 공통 startAt을 확정한다. 사람·AI가 같은 시각에 시작한 뒤 공개 RGB를 추론하고 예약을 해제한다. 현재single은 한 대결만 운영하며 선택 간격0.25초와 모델 호출별 자원 대기를 구분한다. dual 복구에서만 다른 방의 추론과 선택 진행이 겹칠 수 있다. 서버가 물리 GPU 잠금을 직접 조회하는 것은 아니므로 예약 획득 후 begin을 보내는 신뢰된 PC 엔진과 함께 검증한다. 사전 풀이·타이머 사후 보정·임의 오답은 없으며 사용자 요청의30% 자원 대기는 별도 기록한다. 최종 실제 GPU/HTTP/UI/배포 결과는 STATUS다.
 
 인간 cancel-start(requestId), queued 중 engine error·15초 생존 만료·120초 요청 만료(운영 가안)는 원자 lobby 복귀와 ready0으로 처리한다. 취소사유는 human_cancelled/engine_disconnected/engine_error/queue_expired다. 자동취소는 읽었던 heartbeat/stage도 CAS해 새 생존과 경합한 낡은 읽기가 현재 작업을 지우지 않게 한다. begin/HB 쓰기 전에 만료를 정산하므로 옛 ticket이 부활하지 않고 같은 방에서 재준비·사람의 새 수동 start만 허용한다. 취소/새 queue/동시 begin 경합은 revision·ticket·round counter로 격리하며 begin 재전송은 같은 active/result의 기존 round만 ACK한다.
 
 엔진 제출은 서버에 저장한 선택 배열을 기존9타일에 매핑해 채점한다. 선택 snapshot의 배열·sequence와 요청의 실제 엔진 해시를 CAS 조건에 넣어 추론 후 선택 경합·낡은 권한을 거부하고, 기존 D1 batch의 첫 완벽 정답 단일 승자 규칙을 사용한다. 봇 viewer는 사진 준비 ACK만 할 수 있고 엔진 준비·선택·HTTP 제출은 금지되며 인간 공개 상태에는 `selectedIndices`를 제공하지 않는다. 봇 브라우저는 별도 봇 상태에서 서버가 수락한 선택만 표시한다. 물리 OS 마우스 제어나 화면 캡처 성공을 이 경로의 증거로 주장하지 않는다.
 
-현재 엔진은 **라운드마다** 예측1회·제출1회이고 같은 문제의 오답 재추론/수정은 없다. 컴퓨터 브라우저 운영은 SETUP의 현장 순서를 따른다. PC 전원/인터넷과 A/B 인간·봇4주소를 준비하고 `Start-Alpha-Remote.cmd`에서3모델을 한 번 불러온 뒤 최초에만 인간 새 방→봇 표시 브라우저→PC `A 코드`/`B 코드`로 연결한다. 이미 정상 대기 중인 엔진은 유지한다. 이후 첫 정답/현재90초 종료→인간 결과의 다음 참가자 준비→같은 엔진 ready→다음 사람 시작으로 반복한다. 새 코드·재참가·모델 다시 로드가 없고 A/B는 독립적이다. 끝낼 때 quit/창 닫기로 종료하며 실제 게시·PC 재시작/가동은 STATUS가 정본이다.
+현재 엔진은 **라운드마다** 예측1회·제출1회이고 같은 문제의 오답 재추론/수정은 없다. 컴퓨터 브라우저 운영은 SETUP의 현장 순서를 따른다. PC 전원/인터넷과 인간·AI 표시 기본2주소를 준비하고 `Start-Alpha-Remote.cmd`에서3모델을 한 번 불러온 뒤 최초에만 인간 새 방→AI 표시→PC의 숨김8자리 코드로 연결한다. 이미 정상 대기 중인 엔진은 유지한다. 이후 첫 정답/현재90초 종료→인간 결과의 다음 참가자 준비→같은 엔진 ready→다음 사람 시작으로 반복한다. 새 코드·재참가·모델 다시 로드 없이 한 구역을 운영한다. 끝낼 때 quit/창 닫기로 종료하며 실제 게시·PC 재시작/가동은 STATUS가 정본이다.
 
 원격 엔진은 좌표·전면창·공유 OS 커서를 사용하지 않으므로 F8 보정이 필요 없다. 콘솔 입력은 숨겨지고 PC 창·전원·인터넷을 유지한다. 절전 방지는 운영자가 확인할 지침이며 이 작업에서 OS 설정을 바꾸지 않았다. 공개 HTTPS 인터넷 접속이면 되므로 같은 Wi-Fi를 필수로 두지 않는다. busy는 그 레인의 지속 세션이 이미 살아 있다는 뜻일 수 있어 정상 다음 참가자는 콘솔 재입력 없이 인간의 준비 버튼을 사용한다. 방 만료·토큰 유실·잘못된 최초 연결처럼 세션을 유지할 수 없는 예외에만 새 방으로 복구한다.0개 선택은 모델의 양성 예측이 없다는 뜻이며 현재 문제에서는 오답으로 제출하고 같은 라운드를 재추론하지 않는다.
 
@@ -374,4 +394,6 @@ v2의 4정답 격자도 실제 exact-set 성공 횟수/문제 수와 양성 TPR�
 이전 작업 검토(11/04 GitHub): 2026-11-04 담당 문서 전체 본문을 다시 읽고 공개 GitHub 소스와 별도 운영 자산의 경계, 일반 웹 파일 포함과 원래 Sites Git 보존, 새 clone의 의존성/데이터/모델 준비를 대조했다. 공개 저장소 https://github.com/ProgrammingYJ/Alpha_Human_VS_AI 의 PUBLIC main 첫 푸시와 로컬/원격/GitHub tree 일치를 확인했다. 공개 소스 경로의 Python179개(12.565초)·Node110개 통과와 문서13개/설정 JSON8개 점검 결과를 확인했으며, 후속 문서 동기화의 최신 커밋/최종 감사는 STATUS를 따른다. 과거 고정 PID의 게시/재시작 PS1은 보관 소스이며 현재 운영 실행기로 쓰지 않음을 명시했다. 이 문서 작업에서 모델/가중치/임계값·학교 사용·사진은행·서버 배포·운영 PC 프로세스·250ms/FIFO/프로토콜을 변경하지 않았다. 미완료 40%/ONNX/Pi/legacy OS 입력·현장 리허설을 유지하며 전체 문서 점검 정본은 STATUS/CHANGELOG다.
 이전 작업 검토(11/05 외부 시험 준비): 2026-11-05 담당 문서 전체 본문과 AGENTS.md를 다시 읽고 외부 컴퓨터의 공개 HTTPS 접속·인간/AI 표시 창 유지·PC 콘솔 하나의 A/B 최초 연결·같은 방 다음 참가자 순서를 검토했다. 기존 v13의 공개6요청 HTTP200·프로토콜3/사진 배리어/250ms와 정규 PC 엔진의 CUDA3모델 로드15.046초·합성 예열3.657초·총18.703초 성공/코드 입력 대기를 실제 준비 근거로 반영했다. 새 코드 입력·방 heartbeat·문제 RGB 추론·실제 외부 경기/선택은 검증하지 않았고 사용자의 외부 시험 단계와 구분했다. 이번 작업에서 새 배포·가중치/임계값·사진은행·학교 사용·FIFO/250ms 계약을 변경하지 않았다. 기존40%/ONNX/Pi/legacy OS 입력과 현장 리허설 미완료를 유지하며, 운영 프로세스 생존과 전체 문서 점검 정본은 STATUS/CHANGELOG를 따른다.
 
-이번 작업 검토: 2026-11-05 담당 문서 전체 본문을 다시 읽고 모델 문맥·공유 가중치·작업 슬롯/stream 구조를 실제 소스와 대조했다. 사용자 최신 요구에 따라 기본 FIFO를 parallel2슬롯·공유 가중치 한 벌·작업별 processor/진단·CUDA2stream으로 대체하고 명시적 serial 복구와 설정 확인 방법을 반영했다. 이전 FIFO 정책·11/01 및11/02 측정값은 이력으로 보존했다. 모델/전처리/임계값·프로토콜3·세 역할 사진 준비·500ms/250ms·학교 미사용·같은 방 교체는 유지한다. CPU 모델 문맥5개와 기존 ML/격자22개 검사를 통과했고 출력/BN 보존·모드/장치 검사·동시 문맥 분리를 확인했다. 실제16조건쌍 CUDA 출력 동등·OOM0·두 stream kernel 겹침과 조합별 속도 차이를 보고서로 확인했고, 공개 두 방 검사·최신 운영 PID/재시작 및 전체 문서 점검은 STATUS/CHANGELOG를 정본으로 둔다. 독립 정확도40%·ONNX/Pi·legacy 실제 OS 입력·현장 리허설을 새로 완료했다고 보고하지 않는다.
+이전 작업 검토(11/05 병렬 구현): 2026-11-05 담당 문서 전체 본문을 다시 읽고 모델 문맥·공유 가중치·작업 슬롯/stream 구조를 실제 소스와 대조했다. 사용자 최신 요구에 따라 기본 FIFO를 parallel2슬롯·공유 가중치 한 벌·작업별 processor/진단·CUDA2stream으로 대체하고 명시적 serial 복구와 설정 확인 방법을 반영했다. 이전 FIFO 정책·11/01 및11/02 측정값은 이력으로 보존했다. 모델/전처리/임계값·프로토콜3·세 역할 사진 준비·500ms/250ms·학교 미사용·같은 방 교체는 유지한다. CPU 모델 문맥5개와 기존 ML/격자22개 검사를 통과했고 출력/BN 보존·모드/장치 검사·동시 문맥 분리를 확인했다. 실제16조건쌍 CUDA 출력 동등·OOM0·두 stream kernel 겹침과 조합별 속도 차이를 보고서로 확인했고, 공개 두 방 검사·최신 운영 PID/재시작 및 전체 문서 점검은 STATUS/CHANGELOG를 정본으로 둔다. 독립 정확도40%·ONNX/Pi·legacy 실제 OS 입력·현장 리허설을 새로 완료했다고 보고하지 않는다.
+
+이번 작업 검토: 2026-11-06 전체 본문·과거 이력과 현재 운영 소스를 다시 읽고 A/B 병렬 기본값을 단일 대결로 대체했다. 서버 single의 B 차단·기본2주소·기존 A/역할 권한·reset 경계 보존과 PC single1worker/1stream·30% 협력적 모델 호출 시간 예산·CPU4/interop1/자체BelowNormal·명시적 dual 복구를 본문에 반영했다. 원래 배치를 보존한 v2의4조건×3회 점수 최대차이0·선택 동일·OOM0·작업 비율 최대0.29999102와 유형별 추론 중앙값을 기록하고 최초 타일1장 후보의 미통과와 구분했다. 자원 대기·GPU kernel 활성·장치 전체 표본·메모리 한도와 HTTP/화면 시간을 구분했다. 모델/전처리/임계값·학교 미사용·34장 은행·protocol3·500ms/250ms·같은 방 반복을 유지하며 CPU8개 자원 예산 검사 통과와 실제 GPU 보고서를 대조했다. 최종 공개 게시·운영 PID/생존·전체 Markdown 검사는 STATUS/CHANGELOG를 따르며 CTF 병행·행사장 리허설·정확도40%/ONNX/Pi/legacy 실제 OS 입력을 완료했다고 쓰지 않는다.

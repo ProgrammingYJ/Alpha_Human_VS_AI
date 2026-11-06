@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clearRemoteSessions, currentSessionRequest, remoteSessionKeys, resetSessionFailure, sessionKey } from "./arena-session.mjs";
+import { clearRemoteSessions, currentSessionRequest, remoteSessionKeys, resetSessionFailure, sessionKey, operationLane } from "./arena-session.mjs";
 
 const context = (patch = {}) => ({ generation: 4, roomId: "old-room", storageKey: sessionKey("human", "remote", "A"), ...patch });
 
@@ -12,14 +12,27 @@ test("explicit reset removes exactly four remote keys without reading saved cred
   assert.ok(!removed.includes(sessionKey("human", "legacy", "A")));
 });
 
-test("only reset and expired room failures clear the current role/lane session", () => {
-  for (const code of ["room_reset", "room_expired"]) {
+test("only reset, expired and disabled room failures clear the current role/lane session", () => {
+  for (const code of ["room_reset", "room_expired", "lane_disabled"]) {
     assert.equal(resetSessionFailure({ status: 410, code }, context(), context()), true);
     assert.equal(resetSessionFailure({ status: 409, code }, context(), context()), false);
   }
   for (const code of ["round_changed", "engine_disconnected", "bank_not_ready", undefined]) {
     assert.equal(resetSessionFailure({ status: 410, code }, context(), context()), false);
   }
+});
+
+test("single resolves old B URLs or saved preferences to a warned empty internal A session", () => {
+  assert.deepEqual(operationLane("single", "B", "A"), { lane: "A", disabledPreviousLane: true });
+  assert.deepEqual(operationLane("single", undefined, "B"), { lane: "A", disabledPreviousLane: true });
+  assert.deepEqual(operationLane("single", "A", "B"), { lane: "A", disabledPreviousLane: false });
+  assert.deepEqual(operationLane("single", undefined, undefined), { lane: "A", disabledPreviousLane: false });
+});
+
+test("dual and legacy lane restoration remain explicit and unverified server mode is rejected", () => {
+  assert.deepEqual(operationLane("dual", "B", "A"), { lane: "B", disabledPreviousLane: false });
+  assert.deepEqual(operationLane("single", "B", "A", false), { lane: "B", disabledPreviousLane: false });
+  for (const mode of [undefined, null, "", "unexpected"]) assert.throws(() => operationLane(mode, "B", "B"));
 });
 
 test("old poll and action failures cannot clear a new room, reconnected token generation, or different lane", () => {

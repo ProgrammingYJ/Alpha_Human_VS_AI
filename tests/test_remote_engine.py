@@ -261,7 +261,8 @@ class RemoteProtocolTests(unittest.TestCase):
 
     def test_session_reset_HTTP_errors_preserve_bounded_code_status_without_echoing_server_credentials(self):
         raw_message = "untrusted server text with " + TOKEN + " and " + CODE
-        for expected_code, status in (("room_reset", 410), ("session_reset_unavailable", 503)):
+        for expected_code, status in (("room_reset", 410), ("session_reset_unavailable", 503),
+                                      ("lane_disabled", 410), ("operation_mode_unavailable", 503)):
             with self.subTest(code=expected_code):
                 class ErrorOpener:
                     def open(self, request, timeout):
@@ -630,7 +631,7 @@ class RemoteRuntimeTests(unittest.TestCase):
             def close(self): pass
         with tempfile.TemporaryDirectory() as directory:
             output, printed = Path(directory) / "new", StringIO()
-            with patch("sys.argv", [str(path), "--execute", "--once", "--rooms-stdin", "--output", str(output)]), patch("sys.stdin", StringIO(json.dumps({"A": CODE, "B": "HGFEDCBA"}) + "\n")), patch.object(cli, "load_models", return_value=object()), patch.object(cli, "EngineController", Controller), redirect_stdout(printed), redirect_stderr(printed):
+            with patch("sys.argv", [str(path), "--execute", "--once", "--inference-mode", "parallel", "--gpu-duty-cycle", "1", "--rooms-stdin", "--output", str(output)]), patch("sys.stdin", StringIO(json.dumps({"A": CODE, "B": "HGFEDCBA"}) + "\n")), patch.object(cli, "load_models", return_value=object()), patch.object(cli, "EngineController", Controller), redirect_stdout(printed), redirect_stderr(printed):
                 self.assertEqual(cli.main(), 0)
             self.assertEqual(received, [("A", CODE), ("B", "HGFEDCBA")])
             self.assertEqual(modes, [False])

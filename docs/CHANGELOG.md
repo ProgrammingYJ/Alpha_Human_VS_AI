@@ -1,6 +1,34 @@
 # 작업 이력
 
-최종 검토: 2026-11-05 (Asia/Pyongyang)
+최종 검토: 2026-11-06 (Asia/Pyongyang)
+
+## 2026-11-06 A 단일 부스와 협력적 GPU 작업시간 예산30%
+
+- 사용자의 내일11/07 A 하나/CTF 병행 요청이 기존 기본 병렬 정책을 대체한다. 웹 기본 single·A/B UI 제거·B 새 연결409/이전 B410·내부 A/기존 A 인증 유지, PC single worker/stream·8자리코드만 입력·B 사전 차단을 구현했다. dual/parallel은 양쪽 명시적 복구용이다.
+- CooperativePacer로 모델 청크 뒤 마지막까지 작업시간2.333배를 취소 가능한 단위로 쉬게 했다. 유휴 크레딧/추가 상태 HTTP0, 자기 stream 동기화/로컬 생존 검사, 작업/실제 휴식/네트워크/선택 시간을 분리한다. SM/순간 GPU/VRAM 하드 quota가 아니며 CPU4/interop1/자체 BelowNormal만 적용했다.
+- 첫 존재1장 분할 실험은 선택이 같아도 점수 최대0.000302553 차이로 사전1e-5를 넘겨 false로 보존했다. 허용오차 완화/가중치/임계값 변경 없이 원래 배치8+1/9/1×9를 복구했고 v2 네 조건×두 프로필×3회 출력 차이0/선택 동일/OOM0·작업 비율최대29.999102%를 확인했다. peak PyTorch reserved1154MiB이며 커널 추적/전체 장치 샘플/CTF 부하는 서로 구분했다.
+- Python210개10.243초·웹125pass/1skip·TypeScript/build/diff 통과. 공개 single 한 판은 B 차단·3역할9사진/공통 출발·ML1/plan1·250ms·cache/표시 일치·정상 종료가 통과했다. 실제 IAB 기본 인간/봇 UI 및 이전 B 안내/기본 주소 전환도 확인했고 CUA 종료 기록을 남겼다. HTTP/PIL QA와 실제 브라우저/현장 경기·정확도는 섞지 않는다.
+- Sites v15/env7·sourcea3f2cb98bf00cef49a09f6131b4162aade64b504·savedappgprj_6ade37995018819184a42c88bb0fde7c~appgver_e5163f09bb3081919b613c64c0adc8ba·deploymentappgdep_6aed90c7e3948191a4880aaaf10755e5 성공. 공개/두 도메인·초기화 경계1793862306432·관리자 비밀 두 키/DB/R2/사진/모델은 보존했다. source credential 만료는 같은 Site 갱신 후 패키징을 재개했다.
+- 실행 중 발견한 프로젝트 체인26360→3272→32036을 경로/부모 검증 후 업데이트를 위해 정지했다. 공개 QA 후 새 **32140→41944→17664**를 켜두고 single/.30/CPU4/worker1/stream1·BelowNormal·로드5.375+예열6.563=11.938초와 생존을 확인했다. 사용자 최초 코드는 입력하지 않았다. 현재 가동은 runs/single-resource-20261106/operator-start.json이다.
+- 남음: 실제 CTF 동시 부하·사용자 새 최초 연결/행사 한 판·장시간/연속 참가자, 기존40%/ONNX/Pi/legacy OS 입력. 학교 미사용·학습/모델/임계값/사진·protocol3/250ms/500ms/same-room next 경계를 유지한다.
+
+### 이번에 읽고 갱신한 전체 Markdown (13개)
+
+- AGENTS.md
+- README.md
+- docs/README.md
+- docs/SETUP.md
+- docs/ARCHITECTURE.md
+- docs/DATASET.md
+- docs/DATASET_CANDIDATES.md
+- docs/EXECUTION_PLAN.md
+- docs/INTEGRATION.md
+- docs/ROADMAP.md
+- docs/STATUS.md
+- docs/CHANGELOG.md
+- web/alpha-arena/README.md
+
+이번 작업 검토: 단일 저부하 운영 — 13개 전체를 분담 재독하고 변경·실제 검증/실패 이력·한계·남은 작업을 STATUS에 기록했다. 새 Markdown은 없으며 내용 변화 없는 자료 문서도 검토 결과를 남겼다. 실제 문서 점검과 소스 동기화는 최종 완료 기록으로 반영한다.
 
 ## 2026-11-05 운영 연결 init·중복 봇 연결 복구
 

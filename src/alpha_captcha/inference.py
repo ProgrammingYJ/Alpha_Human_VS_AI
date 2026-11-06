@@ -88,12 +88,24 @@ class TorchTilePredictor:
         Model weights, preprocessing and postprocessing remain identical.
         """
         from PIL import Image
-        from .presence_model import predict_presence
-        from .person_model import predict_person
-        from .tasks import PRESENCE_TASKS
         if (not isinstance(condition, TaskCondition) or len(images) != 9
                 or any(not isinstance(image, Image.Image) for image in images)):
             raise ValueError("public condition and exactly nine PIL RGB tiles required")
+        return self.predict_condition_batch(images, condition)
+
+    def predict_condition_batch(self, images, condition: TaskCondition):
+        """Evaluate a bounded pixel chunk without changing model decisions.
+
+        The arena's nine-image contract remains in predict_condition_tiles.
+        Small chunks allow the resource budget to yield between model calls.
+        """
+        from PIL import Image
+        from .presence_model import predict_presence
+        from .person_model import predict_person
+        from .tasks import PRESENCE_TASKS
+        if (not isinstance(condition, TaskCondition) or not 1 <= len(images) <= 9
+                or any(not isinstance(image, Image.Image) for image in images)):
+            raise ValueError("public condition and one to nine PIL pixel images required")
         if condition.task_type in PRESENCE_TASKS:
             scores = predict_presence(self.presence_model, images, device=self.device, **self._inference_options())
             return [TilePrediction(presence_scores=score) for score in scores]

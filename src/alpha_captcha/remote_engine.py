@@ -24,7 +24,7 @@ import warnings
 from PIL import Image
 
 from .booth_bot import public_condition
-from .tasks import select_tiles
+from .tasks import PRESENCE_TASKS, select_tiles
 from .timing import MIN_TILE_INTERVAL_SECONDS
 
 
@@ -48,7 +48,7 @@ SAFE_ERROR_CODES = frozenset({
     "protocol_upgrade_required", "start_request_changed", "queue_expired", "room_changed", "invalid_start_request",
     "start_cancelled", "reservation_required", "plan_conflict", "plan_changed", "plan_active", "plan_too_late", "plan_not_acknowledged",
     "image_load_changed", "image_load_failed", "image_load_timeout", "images_timeout", "image_cache_changed",
-    "not_loading", "room_reset", "session_reset_unavailable",
+    "not_loading", "room_reset", "session_reset_unavailable", "lane_disabled", "operation_mode_unavailable",
 })
 _UNSET = object()
 
@@ -721,17 +721,23 @@ class InferenceWorker:
 class SharedModels:
     """Frozen weights loaded once, with isolated concurrent inference workers.
 
-    Parallel is the operator default. Each reservation owns one worker through
+    The operator uses single A by default; parallel remains an explicit mode.
+    Each reservation owns one worker through
     image readiness, countdown and inference, so neither lane waits for the
     other's prestart path. CUDA workers have distinct streams; this requests
     concurrent execution, not a fixed GPU percentage or a latency guarantee.
     """
 
-    def __init__(self, predictor, tree_predictor, *, lock=None, execution_mode="parallel"):
-        if execution_mode not in {"parallel", "serial"}:
-            raise ValueError("inference mode must be parallel or serial")
+    def __init__(self, predictor, tree_predictor, *, lock=None, execution_mode="parallel", gpu_duty_cycle=1.0):
+        if execution_mode not in {"single", "parallel", "serial"}:
+            raise ValueError("inference mode must be single, parallel or serial")
+        if (isinstance(gpu_duty_cycle, bool) or not isinstance(gpu_duty_cycle, (int, float))
+                or not math.isfinite(gpu_duty_cycle) or not 0 < gpu_duty_cycle <= 1):
+            raise ValueError("GPU duty cycle must be a finite number in (0, 1]")
+        if execution_mode == "parallel" and gpu_duty_cycle < 1:
+            raise ValueError("parallel workers require duty cycle 1; use single for a process-wide time budget")
         self.predictor, self.tree_predictor = predictor, tree_predictor
-        self.execution_mode = execution_mode
+        self.execution_mode, self.gpu_duty_cycle = execution_mode, float(gpu_duty_cycle)
         self.lock = lock or threading.Lock()
         self.reservations = (ParallelGpuReservations() if execution_mode == "parallel"
                              else FifoGpuReservations(self.lock))
@@ -768,7 +774,13 @@ class SharedModels:
                 "max_concurrent_inferences": self.reservations.capacity,
                 "cuda_stream_count": sum(worker.stream is not None for worker in self.workers),
                 "model_weights_shared": True,
-                "gpu_percentage_partitioned": False}
+                "gpu_percentage_partitioned": False,
+                "target_gpu_duty_cycle": self.gpu_duty_cycle,
+                "gpu_resource_limit_kind": "cooperative_model_call_time" if self.gpu_duty_cycle < 1 else "unlimited",
+                "hardware_gpu_quota_enforced": False,
+                "memory_allocator_limit_fraction": None,
+                "inference_chunk_sizes": ({"presence": 8, "person": 9, "tree": 1}
+                                          if self.gpu_duty_cycle < 1 else {"grid": 9})}
 
     @contextmanager
     def _worker_execution(self, worker):
@@ -818,7 +830,8 @@ class SharedModels:
                 "workers_warmed": len(self.workers), **self.execution_metadata()}
 
     def infer(self, images, condition, *, active=lambda: True, timings=None, clock=time.monotonic,
-              reservation=None):
+              reservation=None, check_running=lambda: None, budget_clock=time.perf_counter,
+              budget_sleep=time.sleep):
         if len(images) != 9 or any(not isinstance(image, Image.Image) or image.mode != "RGB" for image in images):
             raise ValueError("exactly nine RGB pixels-only images are required")
         parsed = public_condition(condition)
@@ -831,6 +844,10 @@ class SharedModels:
             raise
         claim.validate(self.reservations)
         worker = self.workers[claim.worker_index]
+        pacer = None
+        if self.gpu_duty_cycle < 1:
+            from .resource_budget import CooperativePacer
+            pacer = CooperativePacer(self.gpu_duty_cycle, clock=budget_clock, sleep=budget_sleep)
         try:
             if not active():
                 raise RemoteEngineError("round_ended")
@@ -840,7 +857,32 @@ class SharedModels:
                 timings["timing_schema_version"] = 2
                 timings.update(self.execution_metadata(), inference_worker_index=claim.worker_index)
             with self._worker_execution(worker):
-                if isinstance(parsed, dict):
+                if pacer is not None:
+                    # Preserve the frozen models' original batch shapes:
+                    # presence uses 8+1, person uses 9, tree uses one at a time.
+                    # Finish and rest after every chunk, including the last.
+                    # No idle credit or private answer/count is involved.
+                    synchronize = worker.stream.synchronize if worker.stream is not None else lambda: None
+                    decisions, rows, tree_detections = [], [], []
+                    targeted = getattr(worker.predictor, "predict_condition_batch", None)
+                    if not isinstance(parsed, dict) and targeted is None:
+                        raise ValueError("resource pacing requires a pixel-chunk predictor")
+                    chunk_size = 1 if isinstance(parsed, dict) else 8 if parsed.task_type in PRESENCE_TASKS else 9
+                    for start in range(0, len(images), chunk_size):
+                        chunk = images[start:start + chunk_size]
+                        if isinstance(parsed, dict):
+                            values = pacer.run(lambda: worker.tree_predictor.predict_at_least_three(chunk),
+                                               synchronize=synchronize, check_running=check_running)
+                            decisions.extend(values)
+                            detections = getattr(worker.tree_predictor, "last_detections", None)
+                            if isinstance(detections, list):
+                                tree_detections.extend(detections)
+                        else:
+                            rows.extend(pacer.run(lambda: targeted(chunk, parsed),
+                                                  synchronize=synchronize, check_running=check_running))
+                    if isinstance(parsed, dict) and len(tree_detections) == len(images):
+                        worker.tree_predictor.last_detections = tree_detections
+                elif isinstance(parsed, dict):
                     decisions = worker.tree_predictor.predict_at_least_three(images)
                 else:
                     targeted = getattr(worker.predictor, "predict_condition_tiles", None)
@@ -858,10 +900,13 @@ class SharedModels:
                                for row in rows]
             if timings is not None:
                 timings["inference_seconds"] = model_returned - inference_started
-                timings["model_inference_seconds"] = model_returned - inference_started
+                timings["model_inference_seconds"] = (pacer.metrics()["inference_work_seconds"]
+                                                       if pacer is not None else model_returned - inference_started)
                 timings["model_call_started_monotonic_seconds"] = inference_started
                 timings["model_call_returned_monotonic_seconds"] = model_returned
         finally:
+            if timings is not None and pacer is not None:
+                timings.update(pacer.metrics(), resource_budget_schema_version=1)
             if owned:
                 claim.release()
         # For a pre-start reservation the caller releases immediately on
@@ -1160,11 +1205,15 @@ def run_one_room(room, models, *, cancel=None, clock=time.monotonic, sleep=time.
         inference_started = clock()
         timings = {}
         try:
+            # Local cancellation/heartbeat checks during resource sleeps never
+            # perform the active() state HTTP request again per image.
+            resource_control = {"check_running": ensure_running} if isinstance(models, SharedModels) else {}
             if reservation is None:
-                selected, predictions = models.infer(images, expected_condition, active=active, timings=timings, clock=clock)
+                selected, predictions = models.infer(images, expected_condition, active=active, timings=timings, clock=clock,
+                                                     **resource_control)
             else:
                 selected, predictions = models.infer(images, expected_condition, active=active, timings=timings,
-                                                     clock=clock, reservation=reservation)
+                                                     clock=clock, reservation=reservation, **resource_control)
         finally:
             if reservation is not None:
                 released_at = clock()
@@ -1448,6 +1497,8 @@ def safe_diagnostic(code):
         "not_found": "연결할 방이 없습니다. 패드에서 새 방을 만들고 코드를 확인하세요.",
         "room_expired": "방이 만료됐습니다. 새 참가자의 새 방을 사용하세요.",
         "room_reset": "운영자가 기존 연결을 초기화했습니다. 인간 화면에서 새 방을 만들고 AI 표시 화면과 PC를 새 코드로 다시 연결하세요.",
+        "lane_disabled": "현재는 단일 대결만 운영합니다. 인간 화면의 새 대결방 코드로 연결하세요.",
+        "operation_mode_unavailable": "서버 운영 모드 설정을 확인해야 합니다. 운영자에게 알려 주세요.",
         "session_reset_unavailable": "서버의 세션 초기화 설정을 확인해야 합니다. 운영자에게 알려 주세요.",
         "connection_failed": "서버 연결이 끊겼습니다. 인터넷과 사이트 상태를 확인하세요.",
         "heartbeat_failed": "서버 생존 확인에 실패해 이 레인의 입력을 중단했습니다.",
